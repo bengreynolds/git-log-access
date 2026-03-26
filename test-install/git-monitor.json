@@ -1,0 +1,16 @@
+{
+  "logPath": "C:\\GitLogs\\default\\default_githistory.log",
+  "deviceNickname": "default",
+  "enabledShells": ["powershell", "cmd"],
+  "monitorScope": "user",
+  "logRotation": {
+    "enabled": true,
+    "maxSizeMb": 100,
+    "keepFiles": 10
+  },
+  "performance": {
+    "maxMemoryMb": 10,
+    "logBufferSize": 1000,
+    "flushIntervalSeconds": 30
+  }
+}
