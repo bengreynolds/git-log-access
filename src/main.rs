@@ -30,6 +30,9 @@ enum Commands {
     Status,
     /// Install hooks, enable interception, and wait until Ctrl+C
     Run(RunArgs),
+    /// Internal command used for the background process monitor
+    #[command(hide = true)]
+    Daemon(DaemonArgs),
     /// Internal command used by shell hooks to log git invocations
     #[command(hide = true)]
     Capture(CaptureArgs),
@@ -78,6 +81,13 @@ struct CaptureArgs {
     args: Vec<String>,
 }
 
+#[derive(Args)]
+struct DaemonArgs {
+    /// Configuration file path
+    #[arg(short, long)]
+    config: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> AppResult<()> {
     let cli = Cli::parse();
@@ -89,6 +99,10 @@ async fn main() -> AppResult<()> {
                 .init();
         }
         Some(Commands::Capture(_)) => {
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error"))
+                .init();
+        }
+        Some(Commands::Daemon(_)) => {
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error"))
                 .init();
         }
@@ -127,6 +141,11 @@ async fn main() -> AppResult<()> {
             let config = load_config(args.config)?;
             let daemon = GitMonitorDaemon::new(config)?;
             daemon.run_foreground().await
+        }
+        Some(Commands::Daemon(args)) => {
+            let config = load_config(args.config)?;
+            let daemon = GitMonitorDaemon::new(config)?;
+            daemon.run_background_daemon().await
         }
         Some(Commands::Capture(args)) => capture_command(args).await,
         None => {

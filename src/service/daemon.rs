@@ -1,20 +1,26 @@
 use crate::config::Config;
 use crate::monitor::GitCommandParser;
-use crate::service::{GitLogger, HookManager, HookStatus};
+use crate::service::{GitLogger, HookManager, HookStatus, ProcessMonitor};
 use anyhow::{Context, Result};
 use log::info;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
+use tokio::time::{sleep, Duration};
+
+const PID_FILE_NAME: &str = "daemon.pid";
 
 /// Background service daemon for git command monitoring
 pub struct GitMonitorDaemon {
     /// Configuration
     config: Config,
     /// Command parser
-    parser: Arc<RwLock<GitCommandParser>>,
+    pub(crate) parser: Arc<RwLock<GitCommandParser>>,
     /// Logger service
-    logger: Arc<GitLogger>,
+    pub(crate) logger: Arc<GitLogger>,
     /// Running state
     running: Arc<RwLock<bool>>,
     /// Service statistics
@@ -39,13 +45,9 @@ pub struct ServiceStats {
 impl GitMonitorDaemon {
     /// Create new daemon instance
     pub fn new(config: Config) -> Result<Self> {
-        // Validate configuration
         config.validate()?;
 
-        // Create command parser with no filters (log all git commands)
         let parser = GitCommandParser::new_all_commands();
-
-        // Create logger
         let logger = GitLogger::new(&config)?;
 
         Ok(GitMonitorDaemon {
@@ -60,17 +62,27 @@ impl GitMonitorDaemon {
     /// Start the daemon service
     pub async fn start_service(&self) -> Result<()> {
         info!("Enabling Git Monitor shell interception");
+        self.initialize_stats().await;
 
-        // Initialize stats
-        {
-            let mut stats = self.stats.write().await;
-            stats.start_time = Some(Instant::now());
-            stats.last_activity = Some(Instant::now());
+        let config_path = self.config.ensure_default_file()?;
+        HookManager::install(&self.config)?;
+
+        if Self::background_daemon_running()? {
+            info!("Background process monitor is already running");
+        } else {
+            Self::spawn_background_daemon(&config_path)?;
+            for _ in 0..20 {
+                if Self::background_daemon_running()? {
+                    break;
+                }
+                sleep(Duration::from_millis(100)).await;
+            }
         }
 
-        let _path = self.config.ensure_default_file()?;
-        let status = HookManager::install(&self.config)?;
-        Self::print_status(&status);
+        Self::print_status(
+            &HookManager::status(&self.config)?,
+            Self::background_daemon_running()?,
+        );
         Ok(())
     }
 
@@ -79,24 +91,26 @@ impl GitMonitorDaemon {
         info!("Stopping Git Monitor Daemon");
         let config = Config::load_or_default(None)?;
         HookManager::set_enabled(&config, false)?;
+        Self::stop_background_daemon()?;
         Ok(())
     }
 
-    /// Install as system service
+    /// Install shell hooks
     pub async fn install_service(_service_name: &str, config: Config) -> Result<()> {
         info!("Installing Git Monitor shell hooks");
         let _path = config.ensure_default_file()?;
         let status = HookManager::install(&config)?;
-        Self::print_status(&status);
+        Self::print_status(&status, Self::background_daemon_running()?);
         Ok(())
     }
 
-    /// Uninstall system service
+    /// Uninstall shell hooks
     pub async fn uninstall_service() -> Result<()> {
         info!("Uninstalling Git Monitor shell hooks");
         let config = Config::load_or_default(None)?;
         let status = HookManager::uninstall(&config)?;
-        Self::print_status(&status);
+        Self::stop_background_daemon()?;
+        Self::print_status(&status, false);
         Ok(())
     }
 
@@ -105,30 +119,38 @@ impl GitMonitorDaemon {
         info!("Checking Git Monitor service status");
         let config = Config::load_or_default(None)?;
         let status = HookManager::status(&config)?;
-        Self::print_status(&status);
+        Self::print_status(&status, Self::background_daemon_running()?);
         Ok(())
     }
 
     /// Run in foreground (for testing/development)
     pub async fn run_foreground(&self) -> Result<()> {
         info!("Running Git Monitor in foreground mode");
+        self.initialize_stats().await;
 
         let _path = self.config.ensure_default_file()?;
         let status = HookManager::install(&self.config)?;
-        Self::print_status(&status);
+        Self::print_status(&status, false);
         info!("Foreground mode active. Press Ctrl+C to disable interception and exit.");
-        tokio::signal::ctrl_c()
-            .await
-            .context("Failed while waiting for Ctrl+C")?;
+        self.run_process_monitor_until_ctrl_c().await?;
         HookManager::set_enabled(&self.config, false)?;
         Ok(())
+    }
+
+    pub async fn run_background_daemon(&self) -> Result<()> {
+        self.initialize_stats().await;
+        HookManager::set_enabled(&self.config, true)?;
+        Self::write_pid_file(std::process::id())?;
+        let result = self.run_process_monitor_loop().await;
+        let _ = Self::clear_pid_file();
+        result
     }
 
     /// Process a git command (called by shell integration)
     pub async fn process_git_command(
         &self,
         command_line: &str,
-        working_dir: Option<std::path::PathBuf>,
+        working_dir: Option<PathBuf>,
     ) -> Result<()> {
         self.process_git_command_with_context(command_line, working_dir, None)
             .await
@@ -138,7 +160,7 @@ impl GitMonitorDaemon {
     pub async fn process_git_command_with_context(
         &self,
         command_line: &str,
-        working_dir: Option<std::path::PathBuf>,
+        working_dir: Option<PathBuf>,
         shell_context: Option<String>,
     ) -> Result<()> {
         let parser = self.parser.read().await;
@@ -151,16 +173,12 @@ impl GitMonitorDaemon {
                     .context("Failed to send command to logger")?;
                 self.logger.flush().await?;
 
-                // Update stats
-                {
-                    let mut stats = self.stats.write().await;
-                    stats.commands_processed += 1;
-                    stats.commands_logged += 1;
-                    stats.last_activity = Some(Instant::now());
-                }
+                let mut stats = self.stats.write().await;
+                stats.commands_processed += 1;
+                stats.commands_logged += 1;
+                stats.last_activity = Some(Instant::now());
             }
             None => {
-                // Not a git command or filtered out
                 let mut stats = self.stats.write().await;
                 stats.commands_processed += 1;
                 stats.last_activity = Some(Instant::now());
@@ -185,12 +203,9 @@ impl GitMonitorDaemon {
     pub async fn stop(&self) -> Result<()> {
         info!("Stopping Git Monitor Daemon");
 
-        {
-            let mut running = self.running.write().await;
-            *running = false;
-        }
+        let mut running = self.running.write().await;
+        *running = false;
 
-        // Stop logger
         self.logger.stop().await?;
 
         info!("Git Monitor Daemon stopped");
@@ -202,7 +217,32 @@ impl GitMonitorDaemon {
         &self.config
     }
 
-    fn print_status(status: &HookStatus) {
+    async fn initialize_stats(&self) {
+        let mut stats = self.stats.write().await;
+        stats.start_time = Some(Instant::now());
+        stats.last_activity = Some(Instant::now());
+    }
+
+    async fn run_process_monitor_until_ctrl_c(&self) -> Result<()> {
+        let mut monitor = ProcessMonitor::new();
+        loop {
+            tokio::select! {
+                result = monitor.poll_once(self) => {
+                    result?;
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    async fn run_process_monitor_loop(&self) -> Result<()> {
+        let mut monitor = ProcessMonitor::new();
+        monitor.run(self).await
+    }
+
+    fn print_status(status: &HookStatus, daemon_running: bool) {
         println!(
             "Interception: {}",
             if status.enabled {
@@ -210,6 +250,10 @@ impl GitMonitorDaemon {
             } else {
                 "disabled"
             }
+        );
+        println!(
+            "Process monitor: {}",
+            if daemon_running { "running" } else { "stopped" }
         );
         for target in &status.targets {
             if target.supported {
@@ -226,6 +270,122 @@ impl GitMonitorDaemon {
             } else {
                 println!("{}: unsupported", target.shell);
             }
+        }
+    }
+
+    fn spawn_background_daemon(config_path: &Path) -> Result<()> {
+        let exe = std::env::current_exe().context("Failed to determine executable path")?;
+        let mut command = Command::new(exe);
+        command
+            .arg("daemon")
+            .arg("--config")
+            .arg(config_path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+
+        command
+            .spawn()
+            .context("Failed to start background daemon")?;
+        Ok(())
+    }
+
+    fn stop_background_daemon() -> Result<()> {
+        let pid = match Self::read_pid_file()? {
+            Some(pid) => pid,
+            None => return Ok(()),
+        };
+
+        if Self::is_pid_running(pid)? {
+            #[cfg(windows)]
+            {
+                Command::new("taskkill")
+                    .args(["/PID", &pid.to_string(), "/F"])
+                    .output()
+                    .context("Failed to stop background daemon")?;
+            }
+            #[cfg(unix)]
+            {
+                Command::new("kill")
+                    .args(["-TERM", &pid.to_string()])
+                    .output()
+                    .context("Failed to stop background daemon")?;
+            }
+        }
+
+        Self::clear_pid_file()?;
+        Ok(())
+    }
+
+    fn background_daemon_running() -> Result<bool> {
+        match Self::read_pid_file()? {
+            Some(pid) => Self::is_pid_running(pid),
+            None => Ok(false),
+        }
+    }
+
+    fn pid_file_path() -> Result<PathBuf> {
+        Ok(Config::default_state_dir()?.join(PID_FILE_NAME))
+    }
+
+    fn write_pid_file(pid: u32) -> Result<()> {
+        let path = Self::pid_file_path()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create state directory: {:?}", parent))?;
+        }
+        fs::write(&path, pid.to_string())
+            .with_context(|| format!("Failed to write pid file: {:?}", path))?;
+        Ok(())
+    }
+
+    fn read_pid_file() -> Result<Option<u32>> {
+        let path = Self::pid_file_path()?;
+        if !path.exists() {
+            return Ok(None);
+        }
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read pid file: {:?}", path))?;
+        Ok(content.trim().parse::<u32>().ok())
+    }
+
+    fn clear_pid_file() -> Result<()> {
+        let path = Self::pid_file_path()?;
+        if path.exists() {
+            fs::remove_file(&path)
+                .with_context(|| format!("Failed to remove pid file: {:?}", path))?;
+        }
+        Ok(())
+    }
+
+    fn is_pid_running(pid: u32) -> Result<bool> {
+        #[cfg(windows)]
+        {
+            let output = Command::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    &format!(
+                        "if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ 'running' }}"
+                    ),
+                ])
+                .output()
+                .context("Failed to query daemon process state")?;
+            Ok(String::from_utf8_lossy(&output.stdout).contains("running"))
+        }
+        #[cfg(unix)]
+        {
+            Ok(Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .status()
+                .context("Failed to query daemon process state")?
+                .success())
         }
     }
 }
