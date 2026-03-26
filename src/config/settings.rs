@@ -5,9 +5,9 @@ impl Config {
     /// Create a configuration for testing purposes
     pub fn test_config() -> Self {
         use std::env;
-        
+
         let temp_dir = env::temp_dir().join("git-monitor-test");
-        
+
         Config {
             log_path: temp_dir.join("test_githistory.log"),
             device_nickname: "test-device".to_string(),
@@ -20,7 +20,7 @@ impl Config {
             },
             performance: super::PerformanceConfig {
                 max_memory_mb: 5,
-                log_buffer_size: 10, // Small buffer for tests
+                log_buffer_size: 10,       // Small buffer for tests
                 flush_interval_seconds: 1, // Fast flush for tests
             },
         }

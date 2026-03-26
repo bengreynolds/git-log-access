@@ -1,18 +1,18 @@
-use std::path::{Path, PathBuf};
+use anyhow::{Context, Result};
 use std::env;
-use anyhow::{Result, Context};
+use std::path::{Path, PathBuf};
 
 /// Find the git repository root directory from a given path
 /// Returns the absolute path to the git repository root, or None if not in a git repository
 pub fn find_git_root<P: AsRef<Path>>(start_path: P) -> Option<PathBuf> {
-    let mut current = start_path.as_ref().canonicalize().ok()?;
-    
+    let mut current = canonicalize_for_logging(start_path.as_ref()).ok()?;
+
     loop {
         let git_dir = current.join(".git");
         if git_dir.exists() {
             return Some(current);
         }
-        
+
         match current.parent() {
             Some(parent) => current = parent.to_path_buf(),
             None => return None,
@@ -42,21 +42,18 @@ pub fn get_repository_name<P: AsRef<Path>>(git_root: P) -> Option<String> {
 
 /// Normalize path for consistent logging (convert to forward slashes, resolve relative paths)
 pub fn normalize_path<P: AsRef<Path>>(path: P) -> Result<String> {
-    let canonical = path.as_ref()
-        .canonicalize()
+    let canonical = canonicalize_for_logging(path.as_ref())
         .with_context(|| format!("Failed to canonicalize path: {:?}", path.as_ref()))?;
-    
-    // Convert to string and normalize separators
+
     let path_str = canonical
         .to_str()
         .context("Path contains invalid UTF-8 characters")?;
-    
-    // On Windows, convert backslashes to forward slashes for consistency
+
     #[cfg(windows)]
     let normalized = path_str.replace('\\', "/");
     #[cfg(unix)]
     let normalized = path_str.to_string();
-    
+
     Ok(normalized)
 }
 
@@ -66,18 +63,39 @@ where
     P: AsRef<Path>,
 {
     let path = path.as_ref();
-    
+
     if path.is_absolute() {
         return Ok(path.to_path_buf());
     }
-    
+
     let base_dir = if let Some(wd) = working_dir {
         wd.as_ref().to_path_buf()
     } else {
         env::current_dir().context("Failed to get current directory")?
     };
-    
+
     Ok(base_dir.join(path))
+}
+
+fn canonicalize_for_logging(path: &Path) -> Result<PathBuf> {
+    let canonical = path.canonicalize()?;
+    Ok(strip_windows_verbatim_prefix(canonical))
+}
+
+#[cfg(windows)]
+fn strip_windows_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let raw = path.as_os_str().to_string_lossy();
+
+    if let Some(stripped) = raw.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path
+    }
+}
+
+#[cfg(not(windows))]
+fn strip_windows_verbatim_prefix(path: PathBuf) -> PathBuf {
+    path
 }
 
 #[cfg(test)]
@@ -90,8 +108,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let git_dir = temp_dir.path().join(".git");
         fs::create_dir(&git_dir).unwrap();
-        // Create a simple git config to make it look like a real repo
-        fs::write(git_dir.join("config"), "[core]\n\trepositoryformatversion = 0\n").unwrap();
+        fs::write(
+            git_dir.join("config"),
+            "[core]\n\trepositoryformatversion = 0\n",
+        )
+        .unwrap();
         temp_dir
     }
 
@@ -99,13 +120,11 @@ mod tests {
     fn test_find_git_root() {
         let test_repo = create_test_git_repo();
         let repo_path = test_repo.path();
-        
-        // Test from repo root
+
         let root = find_git_root(repo_path);
         assert!(root.is_some());
         assert_eq!(root.unwrap(), repo_path);
-        
-        // Test from subdirectory
+
         let subdir = repo_path.join("src");
         fs::create_dir(&subdir).unwrap();
         let root = find_git_root(&subdir);
@@ -124,7 +143,7 @@ mod tests {
     fn test_is_git_repository() {
         let test_repo = create_test_git_repo();
         assert!(is_git_repository(test_repo.path()));
-        
+
         let temp_dir = TempDir::new().unwrap();
         assert!(!is_git_repository(temp_dir.path()));
     }
@@ -134,7 +153,6 @@ mod tests {
         let test_repo = create_test_git_repo();
         let repo_name = get_repository_name(test_repo.path());
         assert!(repo_name.is_some());
-        // Name will be something like "git_log_access.tmp123456"
         assert!(repo_name.unwrap().contains("tmp"));
     }
 
@@ -143,7 +161,6 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let normalized = normalize_path(temp_dir.path()).unwrap();
         assert!(!normalized.is_empty());
-        // Should not contain backslashes (even on Windows)
         assert!(!normalized.contains('\\'));
     }
 }

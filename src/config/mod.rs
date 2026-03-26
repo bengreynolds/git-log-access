@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 pub mod settings;
 
@@ -46,7 +46,7 @@ impl Config {
     pub fn from_file(path: &str) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {}", path))?;
-        
+
         serde_json::from_str(&content)
             .with_context(|| format!("Failed to parse config file: {}", path))
     }
@@ -63,7 +63,7 @@ impl Config {
     pub fn default_config() -> Result<Self> {
         let hostname = Self::get_hostname().unwrap_or_else(|| "unknown".to_string());
         let default_log_dir = Self::get_default_log_dir()?;
-        
+
         Ok(Config {
             log_path: default_log_dir.join(format!("{}_githistory.log", hostname)),
             device_nickname: hostname,
@@ -92,7 +92,7 @@ impl Config {
         {
             use std::ffi::CStr;
             use std::mem;
-            
+
             unsafe {
                 let mut buffer = [0u8; 256];
                 if libc::gethostname(buffer.as_mut_ptr() as *mut i8, buffer.len()) == 0 {
@@ -116,8 +116,7 @@ impl Config {
         }
         #[cfg(unix)]
         {
-            let home = std::env::var("HOME")
-                .context("Could not determine home directory")?;
+            let home = std::env::var("HOME").context("Could not determine home directory")?;
             Ok(PathBuf::from(home).join(".git-logs"))
         }
     }
@@ -125,7 +124,7 @@ impl Config {
     /// Detect available shells on the system
     fn detect_available_shells() -> Vec<String> {
         let mut shells = Vec::new();
-        
+
         #[cfg(windows)]
         {
             // Check for PowerShell
@@ -137,13 +136,13 @@ impl Config {
             }
             // Check for Command Prompt (always available on Windows)
             shells.push("cmd".to_string());
-            
+
             // Check for WSL
             if Self::command_exists("wsl") {
                 shells.push("wsl".to_string());
             }
         }
-        
+
         #[cfg(unix)]
         {
             // Check for common shells
@@ -154,7 +153,7 @@ impl Config {
                 }
             }
         }
-        
+
         if shells.is_empty() {
             // Fallback to at least one shell
             #[cfg(windows)]
@@ -162,17 +161,28 @@ impl Config {
             #[cfg(unix)]
             shells.push("sh".to_string());
         }
-        
+
         shells
     }
 
     /// Check if a command exists in PATH
     fn command_exists(command: &str) -> bool {
-        std::process::Command::new("which")
-            .arg(command)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+        #[cfg(windows)]
+        {
+            std::process::Command::new("where")
+                .arg(command)
+                .output()
+                .map(|output| output.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(unix)]
+        {
+            std::process::Command::new("which")
+                .arg(command)
+                .output()
+                .map(|output| output.status.success())
+                .unwrap_or(false)
+        }
     }
 
     /// Validate configuration

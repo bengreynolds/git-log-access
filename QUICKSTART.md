@@ -1,8 +1,8 @@
-# 🚀 Quick Install Guide
+# Quick Install Guide
 
-## Status: **Ready to Build** ✅
+## Status: Prototype
 
-The Git Monitor project is complete and ready for installation. You just need Rust installed first.
+The project builds and the Rust test suite passes, but the monitoring pipeline is not complete yet. The current `run` command is useful for exercising log output, not for capturing real git commands from your shell.
 
 ## One-Command Install
 
@@ -17,7 +17,7 @@ winget install Rustlang.Rust.MSVC
 
 ### Linux/macOS:
 ```bash
-# 1. Install Rust 
+# 1. Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 
@@ -27,43 +27,39 @@ source ~/.cargo/env
 
 ## What You Get
 
-✅ **Compiled executable** (`git-monitor.exe` on Windows)  
-✅ **Automatic PATH setup** (use `git-monitor` from anywhere)  
-✅ **Default configuration** created  
-✅ **Ready to run** immediately  
+- Compiled executable (`git-monitor.exe` on Windows)
+- Default configuration
+- Log writer and parser scaffold
+- Demo foreground mode for validating log output
 
 ## Quick Test After Install
 
 ```bash
-# Test in foreground mode
+# Run demo mode
 git-monitor run --verbose
 
-# In another terminal, run some git commands
-cd some-git-repo
-git status
-git log --oneline
-
-# Check the logs (path shown during install)
+# The current foreground mode emits demo git commands for validation.
+# Check the logs (path shown during install).
 ```
 
 ## Installation Scripts
 
-- **`install.ps1`** - Windows PowerShell installer
-- **`install.sh`** - Linux/macOS bash installer  
-- **`scripts/test-requirements.*`** - Check prerequisites
+- `install.ps1` - Windows PowerShell installer
+- `install.sh` - Linux/macOS bash installer
+- `scripts/test-requirements.*` - Check prerequisites
 
 Both installers:
-- ✅ Check prerequisites
-- ✅ Build optimized release binary
-- ✅ Install to system PATH
-- ✅ Create default config
-- ✅ Test installation
-- ✅ Show usage instructions
+- Check prerequisites
+- Build optimized release binary
+- Install to PATH
+- Create default config
+- Test installation
+- Show usage instructions that mark the current placeholders clearly
 
 ## Current Status
 
-❌ **Missing**: Rust toolchain  
-✅ **Ready**: Complete codebase, installers, documentation  
-✅ **Tested**: Installation scripts work when Rust is available  
+- Missing: Rust toolchain
+- Ready: Buildable codebase with passing tests
+- Pending: Shell integration and real service lifecycle support
 
-**Next step**: Install Rust, then run the installer!
+Next step: install Rust, build the project, and use `git-monitor run --verbose` only as a demo/logging check.

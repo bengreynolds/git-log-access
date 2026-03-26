@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::monitor::{GitCommandParser, ParsedGitCommand};
-use crate::service::logger::{GitLogger, LogEntry};
+use crate::service::logger::GitLogger;
 use anyhow::{Context, Result};
-use log::{error, info, warn, debug};
+use log::{debug, error, info, warn};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -45,7 +45,7 @@ impl GitMonitorDaemon {
 
         // Create command parser with no filters (log all git commands)
         let parser = GitCommandParser::new_all_commands();
-        
+
         // Create logger
         let logger = GitLogger::new(&config)?;
 
@@ -68,7 +68,7 @@ impl GitMonitorDaemon {
         *running = true;
 
         info!("Starting Git Monitor Daemon");
-        
+
         // Initialize stats
         {
             let mut stats = self.stats.write().await;
@@ -104,38 +104,38 @@ impl GitMonitorDaemon {
     /// Install as system service
     pub async fn install_service(_service_name: &str, _config: Config) -> Result<()> {
         info!("Installing Git Monitor as system service");
-        
+
         #[cfg(windows)]
         {
             // TODO: Implement Windows service installation
             warn!("Windows service installation not yet implemented");
         }
-        
+
         #[cfg(unix)]
         {
             // TODO: Implement systemd service installation
             warn!("Systemd service installation not yet implemented");
         }
-        
+
         Ok(())
     }
 
     /// Uninstall system service
     pub async fn uninstall_service() -> Result<()> {
         info!("Uninstalling Git Monitor system service");
-        
+
         #[cfg(windows)]
         {
             // TODO: Implement Windows service uninstallation
             warn!("Windows service uninstallation not yet implemented");
         }
-        
+
         #[cfg(unix)]
         {
             // TODO: Implement systemd service uninstallation
             warn!("Systemd service uninstallation not yet implemented");
         }
-        
+
         Ok(())
     }
 
@@ -150,7 +150,7 @@ impl GitMonitorDaemon {
     /// Run in foreground (for testing/development)
     pub async fn run_foreground(&self) -> Result<()> {
         info!("Running Git Monitor in foreground mode");
-        
+
         // Start logger
         self.logger.start().await?;
 
@@ -172,10 +172,10 @@ impl GitMonitorDaemon {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(10));
-            
+
             while *running.read().await {
                 interval.tick().await;
-                
+
                 // Update last activity
                 {
                     let mut stats = stats.write().await;
@@ -208,8 +208,6 @@ impl GitMonitorDaemon {
             "git pull origin develop",
         ];
 
-        let sender = self.logger.get_sender();
-        
         for (i, cmd) in test_commands.iter().enumerate() {
             sleep(Duration::from_secs(2)).await;
 
@@ -221,12 +219,7 @@ impl GitMonitorDaemon {
                 shell_context: Some("test-shell".to_string()),
             };
 
-            let entry = LogEntry {
-                command: parsed_cmd,
-                received_at: Instant::now(),
-            };
-
-            if let Err(e) = sender.send(entry) {
+            if let Err(e) = self.logger.log_command(parsed_cmd).await {
                 error!("Failed to send test command: {}", e);
             } else {
                 info!("Logged test command: {}", cmd);
@@ -244,7 +237,7 @@ impl GitMonitorDaemon {
         // Keep running for a bit to allow processing
         info!("Test monitoring completed, keeping service active...");
         sleep(Duration::from_secs(5)).await;
-        
+
         // Flush final logs
         self.logger.flush().await?;
 
@@ -252,18 +245,18 @@ impl GitMonitorDaemon {
     }
 
     /// Process a git command (called by shell integration)
-    pub async fn process_git_command(&self, command_line: &str, working_dir: Option<std::path::PathBuf>) -> Result<()> {
+    pub async fn process_git_command(
+        &self,
+        command_line: &str,
+        working_dir: Option<std::path::PathBuf>,
+    ) -> Result<()> {
         let parser = self.parser.read().await;
-        
+
         match parser.parse_command(command_line, working_dir)? {
             Some(parsed_cmd) => {
-                let entry = LogEntry {
-                    command: parsed_cmd,
-                    received_at: Instant::now(),
-                };
-
-                let sender = self.logger.get_sender();
-                sender.send(entry)
+                self.logger
+                    .log_command(parsed_cmd)
+                    .await
                     .context("Failed to send command to logger")?;
 
                 // Update stats
@@ -299,7 +292,7 @@ impl GitMonitorDaemon {
     /// Stop the daemon
     pub async fn stop(&self) -> Result<()> {
         info!("Stopping Git Monitor Daemon");
-        
+
         {
             let mut running = self.running.write().await;
             *running = false;
@@ -324,21 +317,21 @@ impl GitMonitorDaemon {
 mod windows_service {
     //! Windows Service implementation
     //! This will be implemented in Phase 2
-    
+
     use super::*;
-    
+
     pub async fn install_windows_service(_name: &str, _config: &Config) -> Result<()> {
         // TODO: Implement using windows-service crate
         warn!("Windows service installation will be implemented in Phase 2");
         Ok(())
     }
-    
+
     pub async fn uninstall_windows_service(_name: &str) -> Result<()> {
         // TODO: Implement service removal
         warn!("Windows service uninstallation will be implemented in Phase 2");
         Ok(())
     }
-    
+
     pub async fn get_windows_service_status(_name: &str) -> Result<String> {
         // TODO: Check service status
         Ok("Unknown".to_string())
@@ -349,21 +342,21 @@ mod windows_service {
 mod unix_service {
     //! Unix/Linux systemd service implementation
     //! This will be implemented in Phase 2
-    
+
     use super::*;
-    
+
     pub async fn install_systemd_service(_name: &str, _config: &Config) -> Result<()> {
         // TODO: Create systemd service file
         warn!("Systemd service installation will be implemented in Phase 2");
         Ok(())
     }
-    
+
     pub async fn uninstall_systemd_service(_name: &str) -> Result<()> {
         // TODO: Remove systemd service
         warn!("Systemd service uninstallation will be implemented in Phase 2");
         Ok(())
     }
-    
+
     pub async fn get_systemd_service_status(_name: &str) -> Result<String> {
         // TODO: Check systemd service status
         Ok("Unknown".to_string())
@@ -379,7 +372,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut config = Config::test_config();
         config.log_path = temp_dir.path().join("test.log");
-        
+
         let daemon = GitMonitorDaemon::new(config).unwrap();
         (daemon, temp_dir)
     }
@@ -388,7 +381,7 @@ mod tests {
     async fn test_daemon_creation() {
         let (daemon, _temp_dir) = create_test_daemon().await;
         assert_eq!(*daemon.running.read().await, false);
-        
+
         let stats = daemon.get_stats().await;
         assert_eq!(stats.commands_processed, 0);
         assert_eq!(stats.commands_logged, 0);
@@ -397,7 +390,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_git_command() {
         let (_daemon, _temp_dir) = create_test_daemon().await;
-        
+
         // Note: This test would need a proper git repository context
         // For now, we test that the function doesn't panic
         // Full testing will be done with integration tests
@@ -406,10 +399,10 @@ mod tests {
     #[tokio::test]
     async fn test_update_filters() {
         let (daemon, _temp_dir) = create_test_daemon().await;
-        
+
         let filters = vec!["push".to_string(), "pull".to_string()];
         daemon.update_filters(filters.clone()).await;
-        
+
         let parser = daemon.parser.read().await;
         assert_eq!(parser.filters(), &filters);
     }

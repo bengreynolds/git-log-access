@@ -207,11 +207,11 @@ function Show-UsageInstructions {
     Write-Host "Git Monitor has been successfully installed!" -ForegroundColor White
     Write-Host ""
     Write-Host "Basic Usage:" -ForegroundColor $Colors.Blue
-    Write-Host "  git-monitor run --verbose    # Run in foreground for testing"
-    Write-Host "  git-monitor status           # Check service status"
-    Write-Host "  git-monitor start            # Start background service"
-    Write-Host "  git-monitor stop             # Stop background service"
-    Write-Host "  git-monitor install          # Install as Windows service"
+    Write-Host "  git-monitor run --verbose    # Run demo mode and validate log output"
+    Write-Host "  git-monitor status           # Placeholder status command"
+    Write-Host "  git-monitor start            # Placeholder daemon command"
+    Write-Host "  git-monitor stop             # Placeholder stop command"
+    Write-Host "  git-monitor install          # Service install not implemented yet"
     Write-Host ""
     Write-Host "Configuration:" -ForegroundColor $Colors.Blue
     Write-Host "  Config file: $ConfigDir\config.json"
@@ -220,9 +220,8 @@ function Show-UsageInstructions {
     Write-Host "Quick Start:" -ForegroundColor $Colors.Blue
     Write-Host "  1. Restart this terminal (to refresh PATH)"
     Write-Host "  2. Test: git-monitor run --verbose"
-    Write-Host "  3. Run some git commands in another terminal"
-    Write-Host "  4. Check your log file for entries"
-    Write-Host "  5. When ready: git-monitor install (as Administrator)"
+    Write-Host "  3. Confirm the demo entries appear in your log file"
+    Write-Host "  4. Treat service commands as scaffolding until shell integration is implemented"
     Write-Host ""
     Write-Host "Getting Help:" -ForegroundColor $Colors.Blue
     Write-Host "  git-monitor --help           # Show all commands"

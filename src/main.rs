@@ -1,6 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use git_log_access::{config::Config, service::daemon::GitMonitorDaemon, AppResult};
-use log::{error, info};
+use log::info;
 
 #[derive(Parser)]
 #[command(name = "git-monitor")]

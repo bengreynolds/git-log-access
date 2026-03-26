@@ -1,22 +1,24 @@
 # Git Command Monitor
 
-A cross-platform background service that monitors and logs all git commands executed on a system, providing timestamped logs with repository context for debugging and tracking purposes.
+A Rust prototype for logging git commands with repository context. The current codebase includes configuration, parsing, buffering, and log writing primitives, but it does not yet implement real shell/process interception or production-ready service management.
 
 ## 🚀 Ready for Production Use
 
-Git Monitor is **complete and ready to use** with automated binary releases for all platforms.
+Git Monitor currently builds and passes its test suite, but it should be treated as a development scaffold rather than a finished monitoring product.
+
+Current scope:
+- Parser, config, and buffered log-writer primitives are implemented
+- Real shell or process monitoring is not implemented yet
+- Service install, uninstall, and status commands are still placeholders
 
 ## ✨ Features
 
-- **Cross-platform**: Windows, Linux, macOS (including Apple Silicon)
-- **Ultra-low resource usage**: <10MB RAM, <0.1% CPU idle
+- **Cross-platform codebase**: Windows, Linux, macOS (including Apple Silicon)
 - **Structured logging**: Format `timestamp|rootdir|command`
-- **Command sanitization**: Removes sensitive information from logs
+- **Command sanitization hooks**: Masks a limited set of sensitive arguments
 - **Log rotation**: Configurable file size limits and retention
-- **Background service**: Runs as system service with auto-start
-- **Binary distribution**: No compilation required for users
-- **Simple installation**: One-command setup with automated installers
 - **Security focused**: Local-only operation, no network transmission
+- **CLI scaffolding**: Commands for future service lifecycle management
 
 ## 📦 Installation Options
 
@@ -332,18 +334,20 @@ git-monitor start
 ### Service Management
 
 ```bash
-# Start monitoring (runs in background)
+# Start the placeholder daemon loop
 git-monitor start
 
-# Stop monitoring
+# Stop command is currently a placeholder
 git-monitor stop
 
-# Check service status
+# Status is currently a placeholder
 git-monitor status
 
-# Run in foreground (for testing)
+# Run demo mode in the foreground
 git-monitor run --verbose
 ```
+
+`run --verbose` currently logs simulated git commands for validation. It does not intercept real shell commands yet.
 
 ### Log Format
 

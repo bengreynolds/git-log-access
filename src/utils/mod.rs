@@ -1,5 +1,5 @@
-pub mod timestamp;
 pub mod git_root;
+pub mod timestamp;
 
-pub use timestamp::*;
 pub use git_root::*;
+pub use timestamp::*;

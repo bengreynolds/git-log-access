@@ -1,5 +1,5 @@
 //! Git Log Access - Cross-platform git command monitoring service
-//! 
+//!
 //! This library provides functionality to monitor and log git commands
 //! across different platforms with minimal resource usage.
 

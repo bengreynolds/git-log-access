@@ -17,13 +17,14 @@ pub fn parse_timestamp(timestamp_str: &str) -> Option<DateTime<Local>> {
     if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S %z") {
         return Some(dt.with_timezone(&Local));
     }
-    
+
     // Try without timezone (assume local)
-    if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S") {
+    if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S")
+    {
         use chrono::TimeZone;
         return Local.from_local_datetime(&naive_dt).single();
     }
-    
+
     None
 }
 
@@ -45,7 +46,7 @@ mod tests {
         let timestamp_str = "2026-03-26 14:32:15";
         let parsed = parse_timestamp(timestamp_str);
         assert!(parsed.is_some());
-        
+
         let dt = parsed.unwrap();
         assert_eq!(dt.format("%Y-%m-%d %H:%M:%S").to_string(), timestamp_str);
     }

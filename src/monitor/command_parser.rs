@@ -1,6 +1,6 @@
-use crate::utils::{format_timestamp, find_git_root_cwd, normalize_path};
-use crate::monitor::git_detector::{is_git_command, extract_git_command, should_log_command};
-use anyhow::{Result, Context};
+use crate::monitor::git_detector::{extract_git_command, is_git_command, should_log_command};
+use crate::utils::{find_git_root, format_timestamp, normalize_path};
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 /// Parsed git command with context for logging
@@ -21,17 +21,13 @@ pub struct ParsedGitCommand {
 impl ParsedGitCommand {
     /// Format as log entry: timestamp|rootdir|command
     pub fn to_log_entry(&self) -> String {
-        format!("{}|{}|{}", 
-            self.timestamp, 
-            self.root_dir, 
-            self.command
-        )
+        format!("{}|{}|{}", self.timestamp, self.root_dir, self.command)
     }
 
     /// Parse log entry back to ParsedGitCommand
     pub fn from_log_entry(log_line: &str) -> Result<Self> {
         let parts: Vec<&str> = log_line.splitn(3, '|').collect();
-        
+
         if parts.len() != 3 {
             anyhow::bail!("Invalid log entry format: {}", log_line);
         }
@@ -60,11 +56,17 @@ impl GitCommandParser {
 
     /// Create parser that logs all git commands
     pub fn new_all_commands() -> Self {
-        Self { command_filters: vec![] }
+        Self {
+            command_filters: vec![],
+        }
     }
 
     /// Parse a command line and return parsed git command if it's a git command
-    pub fn parse_command(&self, command_line: &str, working_dir: Option<PathBuf>) -> Result<Option<ParsedGitCommand>> {
+    pub fn parse_command(
+        &self,
+        command_line: &str,
+        working_dir: Option<PathBuf>,
+    ) -> Result<Option<ParsedGitCommand>> {
         // Early check if this is a git command
         if !is_git_command(command_line) {
             return Ok(None);
@@ -82,18 +84,15 @@ impl GitCommandParser {
         }
 
         // Determine the working directory
-        let work_dir = working_dir.unwrap_or_else(|| 
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        );
+        let work_dir = working_dir
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
         // Find the git repository root
-        let git_root = find_git_root_cwd()
-            .or_else(|| crate::utils::find_git_root(&work_dir))
-            .context("Not in a git repository")?;
+        let git_root = find_git_root(&work_dir).context("Not in a git repository")?;
 
         // Normalize the git root path for consistent logging
-        let normalized_root = normalize_path(&git_root)
-            .context("Failed to normalize git root path")?;
+        let normalized_root =
+            normalize_path(&git_root).context("Failed to normalize git root path")?;
 
         // Create the parsed command
         let parsed = ParsedGitCommand {
@@ -102,7 +101,7 @@ impl GitCommandParser {
             command: git_command,
             working_dir: Some(
                 normalize_path(&work_dir)
-                    .unwrap_or_else(|_| work_dir.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| work_dir.to_string_lossy().to_string()),
             ),
             shell_context: None, // Will be set by the shell integration layer
         };
@@ -112,18 +111,18 @@ impl GitCommandParser {
 
     /// Parse command with additional shell context
     pub fn parse_command_with_context(
-        &self, 
-        command_line: &str, 
+        &self,
+        command_line: &str,
         working_dir: Option<PathBuf>,
-        shell_context: Option<String>
+        shell_context: Option<String>,
     ) -> Result<Option<ParsedGitCommand>> {
         let mut parsed = self.parse_command(command_line, working_dir)?;
-        
+
         if let Some(mut cmd) = parsed {
             cmd.shell_context = shell_context;
             parsed = Some(cmd);
         }
-        
+
         Ok(parsed)
     }
 
@@ -162,17 +161,18 @@ impl GitCommandBatchParser {
     }
 
     /// Parse multiple commands and return successfully parsed ones
-    pub fn parse_commands(&self, commands: Vec<(String, Option<PathBuf>)>) -> Vec<ParsedGitCommand> {
+    pub fn parse_commands(
+        &self,
+        commands: Vec<(String, Option<PathBuf>)>,
+    ) -> Vec<ParsedGitCommand> {
         commands
             .into_iter()
-            .filter_map(|(cmd, dir)| {
-                match self.parser.parse_command(&cmd, dir) {
-                    Ok(Some(parsed)) => Some(parsed),
-                    Ok(None) => None,
-                    Err(e) => {
-                        log::warn!("Failed to parse command '{}': {}", cmd, e);
-                        None
-                    }
+            .filter_map(|(cmd, dir)| match self.parser.parse_command(&cmd, dir) {
+                Ok(Some(parsed)) => Some(parsed),
+                Ok(None) => None,
+                Err(e) => {
+                    log::warn!("Failed to parse command '{}': {}", cmd, e);
+                    None
                 }
             })
             .collect()
@@ -182,7 +182,7 @@ impl GitCommandBatchParser {
     pub fn process_commands_in_batches<F>(
         &self,
         commands: Vec<(String, Option<PathBuf>)>,
-        mut callback: F
+        mut callback: F,
     ) -> Result<()>
     where
         F: FnMut(Vec<ParsedGitCommand>) -> Result<()>,
@@ -200,14 +200,18 @@ impl GitCommandBatchParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     fn create_test_git_repo() -> TempDir {
         let temp_dir = TempDir::new().unwrap();
         let git_dir = temp_dir.path().join(".git");
         fs::create_dir(&git_dir).unwrap();
-        fs::write(git_dir.join("config"), "[core]\n\trepositoryformatversion = 0\n").unwrap();
+        fs::write(
+            git_dir.join("config"),
+            "[core]\n\trepositoryformatversion = 0\n",
+        )
+        .unwrap();
         temp_dir
     }
 
@@ -215,11 +219,11 @@ mod tests {
     fn test_parse_git_command() {
         let _test_repo = create_test_git_repo();
         let parser = GitCommandParser::new_all_commands();
-        
+
         // Note: This test might fail if run outside a git repository
         // In real usage, the command would be parsed in the context of the repo
-        let result = parser.parse_command("git status", None);
-        
+        let _result = parser.parse_command("git status", None);
+
         // We can't guarantee this will succeed without proper git repo context
         // but we can test the command detection logic
         assert!(crate::monitor::git_detector::is_git_command("git status"));
@@ -236,7 +240,10 @@ mod tests {
         };
 
         let log_entry = parsed.to_log_entry();
-        assert_eq!(log_entry, "2026-03-26 14:32:15|/home/user/project|git commit -m 'test'");
+        assert_eq!(
+            log_entry,
+            "2026-03-26 14:32:15|/home/user/project|git commit -m 'test'"
+        );
 
         let parsed_back = ParsedGitCommand::from_log_entry(&log_entry).unwrap();
         assert_eq!(parsed_back.timestamp, parsed.timestamp);
@@ -247,13 +254,13 @@ mod tests {
     #[test]
     fn test_parser_with_filters() {
         let mut parser = GitCommandParser::new(vec!["push".to_string(), "pull".to_string()]);
-        
+
         // Test filter management
         assert_eq!(parser.filters(), &["push", "pull"]);
-        
+
         parser.add_filter("commit".to_string());
         assert_eq!(parser.filters(), &["push", "pull", "commit"]);
-        
+
         parser.remove_filter("pull");
         assert_eq!(parser.filters(), &["push", "commit"]);
     }
@@ -262,13 +269,13 @@ mod tests {
     fn test_batch_parser() {
         let parser = GitCommandParser::new_all_commands();
         let batch_parser = GitCommandBatchParser::new(parser, 2);
-        
+
         let commands = vec![
             ("git status".to_string(), None),
             ("ls -la".to_string(), None),
             ("git commit -m 'test'".to_string(), None),
         ];
-        
+
         let parsed = batch_parser.parse_commands(commands);
         // May be empty due to git repository context requirements
         // but the parsing logic is exercised
