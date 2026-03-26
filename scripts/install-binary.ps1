@@ -421,12 +421,68 @@ function Uninstall {
 }
 
 # Main execution
+function Test-ExistingInstallation {
+    # Check if Git Monitor is already installed
+    $exePath = "$InstallDir\git-monitor.exe"
+    $configPath = "$ConfigDir\config.json"
+    $commandAvailable = $false
+    
+    # Check if git-monitor command is available
+    try {
+        $null = Get-Command git-monitor -ErrorAction SilentlyContinue
+        $commandAvailable = $true
+    } catch {}
+    
+    if ((Test-Path $exePath) -or (Test-Path $configPath) -or $commandAvailable) {
+        Write-Warning "Git Monitor installation detected:"
+        if (Test-Path $exePath) { Write-Host "  Executable: $exePath" -ForegroundColor Yellow }
+        if (Test-Path $configPath) { Write-Host "  Config: $configPath" -ForegroundColor Yellow }
+        if ($commandAvailable) { Write-Host "  Command available in PATH" -ForegroundColor Yellow }
+        
+        if ($Force) {
+            Write-Info "Force flag detected - proceeding with reinstallation..."
+            return $true
+        }
+        
+        if ($Silent) {
+            Write-Warning "Silent mode - skipping reinstall (use -Force to reinstall)"
+            return $false
+        }
+        
+        Write-Host ""
+        do {
+            $response = Read-Host "Do you want to reinstall? This will overwrite existing files. [y/N]"
+            $response = $response.Trim().ToLower()
+            
+            if ($response -eq "" -or $response -eq "n" -or $response -eq "no") {
+                Write-Host "Installation cancelled." -ForegroundColor Yellow
+                Write-Host "Use -Force flag to reinstall without prompting" -ForegroundColor Yellow
+                return $false
+            } elseif ($response -eq "y" -or $response -eq "yes") {
+                Write-Info "Proceeding with reinstallation..."
+                # Set Force to true for the rest of the installation
+                $script:Force = $true
+                return $true
+            } else {
+                Write-Host "Please enter 'y' for yes or 'n' for no." -ForegroundColor Red
+            }
+        } while ($true)
+    }
+    
+    return $true
+}
+
 function Main {
     Write-Host "Git Monitor Binary Installer" -ForegroundColor $Colors.Blue
     Write-Host "=============================" -ForegroundColor $Colors.Blue
     Write-Host ""
     
     if (!(Test-Prerequisites)) {
+        exit 1
+    }
+    
+    # Check for existing installation and prompt for reinstall
+    if (!(Test-ExistingInstallation)) {
         exit 1
     }
     
@@ -460,15 +516,15 @@ switch -Regex ($args[0]) {
         Write-Host "Git Monitor Binary Installer"
         Write-Host ""
         Write-Host "Usage:"
-        Write-Host "  .\install.ps1              # Install Git Monitor (interactive)"
-        Write-Host "  .\install.ps1 uninstall    # Uninstall Git Monitor"
+        Write-Host "  .\.install.ps1              # Install Git Monitor (prompts for reinstall if exists)"
+        Write-Host "  .\.install.ps1 uninstall    # Uninstall Git Monitor"
         Write-Host ""
         Write-Host "Options:"
         Write-Host "  -InstallDir <path>         # Custom installation directory"
         Write-Host "  -ConfigDir <path>          # Custom config directory"
-        Write-Host "  -Force                     # Overwrite existing installation"
+        Write-Host "  -Force                     # Overwrite existing installation without prompting"
         Write-Host "  -NoService                 # Skip Windows service installation"
-        Write-Host "  -Silent                    # Use defaults, no interactive prompts"
+        Write-Host "  -Silent                    # Use defaults, no interactive prompts (skips reinstall)"
         exit 1
     }
 }

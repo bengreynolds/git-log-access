@@ -42,7 +42,7 @@ show_usage() {
 Git Monitor Binary Installer
 
 Usage:
-  ./install.sh [install]         # Install Git Monitor (interactive setup)
+  ./install.sh [install]         # Install Git Monitor (prompts for reinstall if exists)
   ./install.sh uninstall         # Remove Git Monitor
   ./install.sh --help            # Show this help
 
@@ -50,13 +50,13 @@ Environment Variables:
   INSTALL_DIR=/path              # Installation directory (default: /usr/local/bin)
   CONFIG_DIR=/path               # Configuration directory (default: ~/.config/git-monitor)
   LOG_DIR=/path                  # Log directory (default: ~/.local/share/git-monitor)
-  FORCE_INSTALL=true             # Force overwrite existing installation
+  FORCE_INSTALL=true             # Force overwrite existing installation without prompting
   NO_SERVICE=true                # Skip service installation
-  SILENT=true                    # Use defaults, no interactive prompts
+  SILENT=true                    # Use defaults, no interactive prompts (skips reinstall)
 
 Examples:
   INSTALL_DIR=~/.local/bin ./install.sh        # Install to user directory  
-  FORCE_INSTALL=true ./install.sh              # Overwrite existing install
+  FORCE_INSTALL=true ./install.sh              # Overwrite existing install without prompt
   NO_SERVICE=true ./install.sh                 # Skip service setup
   SILENT=true ./install.sh                     # Automated install with defaults
 EOF
@@ -104,13 +104,54 @@ install_executable() {
     local target_path="$INSTALL_DIR/git-monitor"
     
     # Handle existing installation
-    if [ -f "$target_path" ]; then
+    if [ -f "$target_path" ] || command -v git-monitor >/dev/null 2>&1; then
         if [ "$FORCE_INSTALL" = "true" ]; then
-            log_warn "Overwriting existing installation at $target_path"
-        else
-            log_error "Git Monitor already installed at $target_path"
-            echo "Use FORCE_INSTALL=true to overwrite, or run uninstall first"
+            if [ -f "$target_path" ]; then
+                log_warn "Overwriting existing installation at $target_path"
+            fi
+            if command -v git-monitor >/dev/null 2>&1; then
+                log_warn "Git Monitor command found in PATH"
+            fi
+        elif [ "$SILENT" = "true" ]; then
+            log_error "Git Monitor already installed"
+            if [ -f "$target_path" ]; then
+                echo "  Found at: $target_path"
+            fi
+            if command -v git-monitor >/dev/null 2>&1; then
+                echo "  Command available in PATH"
+            fi
+            echo "Use FORCE_INSTALL=true to overwrite in silent mode"
             return 1
+        else
+            log_warn "Git Monitor installation detected:"
+            if [ -f "$target_path" ]; then
+                echo "  Executable: $target_path"
+            fi
+            if command -v git-monitor >/dev/null 2>&1; then
+                echo "  Command available in PATH"
+            fi
+            echo ""
+            while true; do
+                printf "Do you want to reinstall? This will overwrite existing files. [y/N]: "
+                read -r response
+                response=$(echo "$response" | tr '[:upper:]' '[:lower:]' | xargs)
+                
+                case "$response" in
+                    ""|"|no|n)
+                        echo "Installation cancelled."
+                        echo "Use FORCE_INSTALL=true to reinstall without prompting"
+                        return 1
+                        ;;
+                    yes|y)
+                        log_info "Proceeding with reinstallation..."
+                        FORCE_INSTALL="true"
+                        break
+                        ;;
+                    *)
+                        echo "Please enter 'y' for yes or 'n' for no."
+                        ;;
+                esac
+            done
         fi
     fi
     

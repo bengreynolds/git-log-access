@@ -410,6 +410,12 @@ See the **Security & Command Sanitization** section above for log format details
 
 ### Common Issues
 
+**Reinstallation/Existing Installation:**
+- The installer automatically detects existing installations
+- You'll get a prompt asking if you want to reinstall when Git Monitor is already installed
+- Use `-Force` (PowerShell) or `FORCE_INSTALL=true` (Bash) to skip prompt and overwrite
+- Silent installations (`-Silent` or `SILENT=true`) will skip reinstall unless forced
+
 **Service won't start:**
 ```bash
 # Check status
