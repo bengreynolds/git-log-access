@@ -156,7 +156,8 @@ function New-Config {
         
         $configJson = $config | ConvertTo-Json -Depth 10
         $configPath = "$ConfigDir\config.json"
-        Set-Content -Path $configPath -Value $configJson -Encoding UTF8
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($configPath, $configJson, $utf8NoBom)
         
         Write-Success "Created configuration at $configPath"
         Write-Info "Log will be written to: $logDir\${hostname}_githistory.log"

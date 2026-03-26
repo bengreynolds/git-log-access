@@ -220,7 +220,8 @@ function New-Config {
         }
 
         $configJson = $userConfig | ConvertTo-Json -Depth 10
-        Set-Content -Path $configPath -Value $configJson -Encoding UTF8
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($configPath, $configJson, $utf8NoBom)
 
         Write-Success "Created configuration at $configPath"
         Write-Success "Log will be written to: $logFile"
@@ -266,12 +267,18 @@ function Enable-Monitoring {
 
     try {
         $exePath = Get-ExePath
-        $result = & $exePath start 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Monitoring enabled"
-            Write-Info "Open a new PowerShell or pwsh window to load the installed profile hook"
+        $process = Start-Process -FilePath $exePath -ArgumentList "start" -NoNewWindow -PassThru
+        if ($process.WaitForExit(5000)) {
+            if ($process.ExitCode -eq 0) {
+                Write-Success "Monitoring enabled"
+                Write-Info "Open a new PowerShell or pwsh window to load the installed profile hook"
+            } else {
+                Write-Warning "Automatic activation failed with exit code $($process.ExitCode)"
+                Write-Info "You can enable it later with: git-monitor start"
+            }
         } else {
-            Write-Warning "Automatic activation failed: $result"
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Write-Warning "Automatic activation did not complete within 5 seconds"
             Write-Info "You can enable it later with: git-monitor start"
         }
     } catch {
@@ -429,7 +436,7 @@ function Main {
         exit 1
     }
 
-    Enable-Monitoring
+    Enable-Monitoring | Out-Null
     Show-CompletionMessage
 }
 

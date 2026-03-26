@@ -223,7 +223,7 @@ jobs:
         else
           echo "# Git Monitor ${GITHUB_REF#refs/tags/}" > release_notes.txt
           echo "" >> release_notes.txt
-          echo "Cross-platform git command monitoring with background service capability." >> release_notes.txt
+          echo "Cross-platform git command monitoring with shell hooks and a background process monitor." >> release_notes.txt
           echo "" >> release_notes.txt
           echo "## 📦 Downloads" >> release_notes.txt
           echo "" >> release_notes.txt
@@ -248,7 +248,8 @@ jobs:
           echo "" >> release_notes.txt
           echo "## ✨ Features" >> release_notes.txt
           echo "- Cross-platform git command monitoring (Windows/Linux/macOS)" >> release_notes.txt  
-          echo "- Background service with auto-start capability" >> release_notes.txt
+          echo "- Hook-based interception for supported shells" >> release_notes.txt
+          echo "- Background process monitor for additional coverage" >> release_notes.txt
           echo "- Performance optimized: <10MB RAM, <0.1% CPU usage" >> release_notes.txt
           echo "- Command sanitization for security" >> release_notes.txt
           echo "- Log rotation and configuration management" >> release_notes.txt

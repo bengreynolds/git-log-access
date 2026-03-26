@@ -164,35 +164,21 @@ function Test-WindowsRequirements {
         Write-Host "  Fix: Update Windows PowerShell or install PowerShell Core" -ForegroundColor Yellow
     }
     
-    # Test if running as administrator
-    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
-    $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    
-    if ($isAdmin) {
-        Write-Pass "Running with administrator privileges"
-    } else {
-        Write-Warning "Not running as administrator"
-        Write-Host "  Note: Administrator privileges required for system service installation" -ForegroundColor Yellow
-        Write-Host "  Fix: Run installer as Administrator for full functionality" -ForegroundColor Yellow
-    }
-    
-    # Test Windows Service Control Manager
+    # Test per-user shell profile location
+    $profileDir = Split-Path -Parent $PROFILE.CurrentUserAllHosts
     try {
-        $services = Get-Service | Select-Object -First 1
-        if ($services) {
-            Write-Pass "Windows Service Control Manager accessible"
-        }
+        New-Item -Path $profileDir -ItemType Directory -Force | Out-Null
+        Write-Pass "Can access PowerShell profile directory"
     } catch {
-        Write-Error "Cannot access Windows Service Control Manager"
-        Write-Host "  Fix: Run as Administrator or check Windows services" -ForegroundColor Yellow
+        Write-Error "Cannot access PowerShell profile directory"
+        Write-Host "  Fix: Ensure write access to $profileDir" -ForegroundColor Yellow
     }
     
     # Test common shells
     $shells = @(
         @{Name="PowerShell"; Command="powershell"},
         @{Name="PowerShell Core"; Command="pwsh"},
-        @{Name="Command Prompt"; Command="cmd"}
+        @{Name="Windows PowerShell"; Command="powershell"}
     )
     
     $shellsFound = 0
@@ -239,24 +225,17 @@ function Test-BuildRequirements {
     
     # Test if we can compile a basic Rust project
     $tempDir = [System.IO.Path]::GetTempPath() + [System.Guid]::NewGuid().ToString()
+    $projectDir = Join-Path $tempDir "test-project"
     
     try {
         New-Item -Path $tempDir -ItemType Directory | Out-Null
-        Push-Location $tempDir
-        
-        try {
-            cargo init test-project --name test *>$null
-            Push-Location "test-project"
-            cargo check *>$null
-            Write-Pass "Rust compilation works"
-        } catch {
-            Write-Error "Rust compilation failed"
-            Write-Host "  Fix: Check Rust installation or try: rustup update" -ForegroundColor Yellow
-        }
+        cargo new $projectDir --name test *>$null
+        cargo check --manifest-path (Join-Path $projectDir "Cargo.toml") *>$null
+        Write-Pass "Rust compilation works"
     } catch {
-        Write-Error "Build test failed: $($_.Exception.Message)"
+        Write-Error "Rust compilation failed"
+        Write-Host "  Fix: Check Rust installation or try: rustup update" -ForegroundColor Yellow
     } finally {
-        Pop-Location -ErrorAction SilentlyContinue
         if (Test-Path $tempDir) {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }

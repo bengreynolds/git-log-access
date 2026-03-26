@@ -414,7 +414,7 @@ mod tests {
     #[tokio::test]
     async fn test_daemon_creation() {
         let (daemon, _temp_dir) = create_test_daemon().await;
-        assert_eq!(*daemon.running.read().await, false);
+        assert!(!(*daemon.running.read().await));
 
         let stats = daemon.get_stats().await;
         assert_eq!(stats.commands_processed, 0);

@@ -6,38 +6,51 @@ use std::path::PathBuf;
 pub mod settings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
     /// Path to the log file
+    #[serde(alias = "log_path")]
     pub log_path: PathBuf,
     /// Device nickname for identification
+    #[serde(alias = "device_nickname")]
     pub device_nickname: String,
     /// Enabled shell environments
+    #[serde(alias = "enabled_shells")]
     pub enabled_shells: Vec<String>,
     /// Monitoring scope: "user", "system", or "directory"
+    #[serde(alias = "monitor_scope")]
     pub monitor_scope: String,
     /// Log rotation configuration
+    #[serde(alias = "log_rotation")]
     pub log_rotation: LogRotationConfig,
     /// Performance constraints
     pub performance: PerformanceConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LogRotationConfig {
     /// Enable log rotation
     pub enabled: bool,
     /// Maximum log file size in MB
+    #[serde(alias = "max_size_mb")]
     pub max_size_mb: u64,
     /// Number of rotated files to keep
+    #[serde(alias = "keep_files")]
     pub keep_files: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PerformanceConfig {
     /// Maximum memory usage in MB
+    #[serde(alias = "max_memory_mb")]
     pub max_memory_mb: u64,
     /// Log buffer size (number of entries to buffer before writing)
+    #[serde(alias = "log_buffer_size")]
     pub log_buffer_size: usize,
     /// Flush interval in seconds
+    #[serde(alias = "flush_interval_seconds")]
     pub flush_interval_seconds: u64,
 }
 

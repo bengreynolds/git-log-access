@@ -165,7 +165,7 @@ if not exist "%CONFIG_PATH%" (
         echo {
         echo   "logPath": "%LOG_FILE_PATH:\=\\%",
         echo   "deviceNickname": "%DEVICE_NICKNAME%",
-        echo   "enabledShells": ["powershell", "cmd"],
+        echo   "enabledShells": ["powershell", "pwsh"],
         echo   "monitorScope": "user",
         echo   "logRotation": {
         echo     "enabled": true,
@@ -196,25 +196,32 @@ if errorlevel 1 (
 )
 echo [SUCCESS] Installation test passed
 
-REM Optional service installation
+REM Enable monitoring unless silent mode is intended to stay passive
+echo.
+echo [INFO] Enabling shell hooks and background monitor...
+"%INSTALL_DIR%\git-monitor.exe" start >nul 2>&1
+if errorlevel 1 (
+    echo [WARN] Automatic activation failed
+    echo [INFO] You can enable it later with: git-monitor start
+) else (
+    echo [SUCCESS] Monitoring enabled
+    echo [INFO] Open a new PowerShell or pwsh window to load the installed profile hook
+)
+
 echo.
 echo Git Monitor installation is complete!
 echo.
-echo To install as a Windows service ^(requires Administrator^):
-echo   1. Right-click Command Prompt or PowerShell
-echo   2. Select "Run as administrator"  
-echo   3. Run: git-monitor install
-echo.
-echo Quick Start:
-echo   1. Restart your terminal ^(to refresh PATH^)
-echo   2. Test: git-monitor run --verbose
-echo   3. Run some git commands in another terminal
+echo Next steps:
+echo   1. Open a new terminal ^(to refresh PATH and load shell profile changes^)
+echo   2. Run: git-monitor status
+echo   3. Run some git commands in a repository
 echo   4. Check your log file for entries
 echo.
 echo Commands:
-echo   git-monitor run --verbose    # Test in foreground
-echo   git-monitor status           # Check service status  
-echo   git-monitor start/stop       # Control service
+echo   git-monitor start            # Enable hooks and start the background monitor
+echo   git-monitor stop             # Disable hooks and stop the background monitor
+echo   git-monitor status           # Show hook and daemon status
+echo   git-monitor run --verbose    # Foreground smoke test
 echo   git-monitor --help           # Full command list
 echo.
 echo Configuration:

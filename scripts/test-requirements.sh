@@ -172,13 +172,12 @@ test_platform_specific() {
 }
 
 test_linux_requirements() {
-    # Test systemd (for service management)
-    if command -v systemctl &> /dev/null; then
-        log_pass "systemd found (for service management)"
+    # Test user shell profile locations used by hook installation
+    if mkdir -p "$HOME/.config" "$HOME/.local/share" 2>/dev/null; then
+        log_pass "Can access user configuration directories"
     else
-        log_warn "systemd not found"
-        echo "  Note: Service installation may not work on this system"
-        echo "  Alternative: Run manually or use cron for startup"
+        log_error "Cannot access user configuration directories"
+        echo "  Fix: Ensure write permissions to $HOME"
     fi
     
     # Test shells
@@ -195,13 +194,6 @@ test_linux_requirements() {
         echo "  Fix: Install at least one supported shell"
     fi
     
-    # Test if we can write to /etc/systemd/system (for service installation)
-    if [[ -w "/etc/systemd/system" ]] 2>/dev/null; then
-        log_pass "Can install system services"
-    else
-        log_warn "Cannot write to /etc/systemd/system"
-        echo "  Note: Will need sudo for service installation"
-    fi
 }
 
 test_windows_requirements() {
@@ -213,26 +205,22 @@ test_windows_requirements() {
         echo "  Fix: Install PowerShell from https://github.com/PowerShell/PowerShell"
     fi
     
-    # Test if running as administrator (for service installation)
-    # This is approximated in bash/msys environment
-    log_warn "Windows service installation requires administrator privileges"
-    echo "  Note: Run installer as Administrator for service installation"
-    
-    # Test Windows Service support (approximated)
-    if command -v sc &> /dev/null; then
-        log_pass "Windows Service Control Manager accessible"
+    # Test user profile access for PowerShell hooks
+    if [[ -n "$USERPROFILE" ]]; then
+        log_pass "Windows user profile detected"
     else
-        log_warn "Cannot access Windows Service Control Manager"
+        log_warn "USERPROFILE not set"
+        echo "  Note: Shell hook installation needs a writable user profile"
     fi
 }
 
 test_macos_requirements() {
-    # Test if we can use launchd for services
-    if [[ -d "/Library/LaunchDaemons" ]]; then
-        log_pass "macOS LaunchDaemon support available"
+    # Test user shell profile locations used by hook installation
+    if mkdir -p "$HOME/.config" "$HOME/.local/share" 2>/dev/null; then
+        log_pass "Can access user configuration directories"
     else
-        log_warn "Cannot access LaunchDaemon directory"
-        echo "  Note: May need sudo for service installation"
+        log_error "Cannot access user configuration directories"
+        echo "  Fix: Ensure write permissions to $HOME"
     fi
     
     # Test basic shells

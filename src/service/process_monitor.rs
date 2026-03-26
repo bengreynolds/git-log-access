@@ -23,6 +23,12 @@ pub struct ProcessMonitor {
     poll_interval: Duration,
 }
 
+impl Default for ProcessMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcessMonitor {
     pub fn new() -> Self {
         Self {

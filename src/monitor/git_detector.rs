@@ -104,7 +104,7 @@ pub fn extract_git_command(command_line: &str) -> Option<String> {
 
 /// Sanitize git command by removing or masking sensitive arguments
 fn sanitize_command(command_line: &str) -> String {
-    let parts: Vec<&str> = command_line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = command_line.split_whitespace().collect();
     let mut sanitized_parts: Vec<String> = Vec::new();
     let mut skip_next = false;
 
@@ -161,7 +161,7 @@ pub fn should_log_command(command: &str, config_filters: &[String]) -> bool {
 
 /// Extract the main git operation from a command (e.g., "push", "commit", "pull")
 pub fn extract_git_operation(command: &str) -> Option<String> {
-    let parts: Vec<&str> = command.trim().split_whitespace().collect();
+    let parts: Vec<&str> = command.split_whitespace().collect();
 
     if parts.len() < 2 {
         return None;

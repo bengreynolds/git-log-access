@@ -8,8 +8,8 @@ Git Monitor currently builds, passes its test suite, and supports real hook-base
 
 Current scope:
 - Parser, config, shell hooks, and buffered log writing are implemented
-- `install`, `start`, `stop`, `status`, and `uninstall` now manage hook-based interception
-- True OS-level background service management and process-table interception are still out of scope
+- `install`, `start`, `stop`, `status`, and `uninstall` manage hook-based interception and daemon state
+- The background process monitor is implemented, but shell hooks still provide the most accurate repository context on Windows
 
 ## ✨ Features
 
