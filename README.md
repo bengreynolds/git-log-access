@@ -45,6 +45,202 @@ git-log-access/
 └── tests/                   # Integration tests
 ```
 
+## Installation
+
+### Prerequisites
+
+Before installing Git Monitor, ensure your system meets the requirements by running the installation test script.
+
+#### Quick Requirement Check
+
+**Windows (PowerShell):**
+```powershell
+# Download and run requirement test
+curl -o test-requirements.ps1 https://raw.githubusercontent.com/bengreynolds/git-log-access/main/scripts/test-requirements.ps1
+powershell -ExecutionPolicy Bypass -File test-requirements.ps1
+```
+
+**Linux/macOS (Bash):**
+```bash
+# Download and run requirement test
+curl -sSf https://raw.githubusercontent.com/bengreynolds/git-log-access/main/scripts/test-requirements.sh | bash
+```
+
+Or run locally if you have the repository:
+```bash
+# Windows
+.\scripts\test-requirements.ps1
+
+# Linux/macOS
+./scripts/test-requirements.sh
+```
+
+### System Requirements
+
+#### Core Requirements
+- **Rust 1.70+** - Required for building
+- **Git 2.0+** - The tool monitors git commands
+- **Write permissions** - For log file creation
+
+#### Platform-Specific Requirements
+
+**Windows:**
+- PowerShell 5.0+ (built into Windows 10+)
+- Administrator privileges (for system service installation)
+- Windows Service Control Manager access
+
+**Linux:**
+- systemd (for service management)
+- One of: bash, zsh, fish shell
+- sudo access (for system service installation)
+
+**macOS:**
+- bash or zsh shell (built-in)
+- sudo access (for system service installation)
+
+### Installation Steps
+
+#### 1. Verify Requirements
+Run the requirement test script (see above) to ensure your system is ready.
+
+#### 2. Clone and Build
+```bash
+# Clone the repository
+git clone https://github.com/bengreynolds/git-log-access.git
+cd git-log-access
+
+# Build release version (optimized)
+cargo build --release
+```
+
+#### 3. Configure Installation
+Create your configuration file or use interactive setup:
+
+```bash
+# Interactive configuration setup
+./target/release/git-monitor configure
+
+# Or copy and edit default config
+cp config/default.json ./git-monitor.json
+# Edit git-monitor.json with your preferred settings
+```
+
+**Key Configuration Options:**
+- **Device Nickname**: Friendly name for this machine
+- **Log Directory**: Where to store git command logs
+- **Enabled Shells**: Which shell environments to monitor
+- **Log Retention**: File rotation and cleanup settings
+
+#### 4. Install as System Service
+
+**Windows (Run as Administrator):**
+```powershell
+# Install system service
+./target/release/git-monitor.exe install
+
+# Start the service
+./target/release/git-monitor.exe start
+```
+
+**Linux (with sudo):**
+```bash
+# Install system service
+sudo ./target/release/git-monitor install
+
+# Enable and start service
+sudo systemctl enable git-monitor
+sudo systemctl start git-monitor
+```
+
+#### 5. Verify Installation
+```bash
+# Check service status
+./target/release/git-monitor status
+
+# Test git command logging (run a git command and check the log)
+git status
+cat /path/to/your/log/device-name_githistory.log
+```
+
+### Alternative Installation Methods
+
+#### Manual Installation (No Service)
+For development or testing without system service:
+```bash
+# Build and run in foreground
+cargo build --release
+./target/release/git-monitor run --verbose
+```
+
+#### Docker Installation (Linux)
+```bash
+# Build Docker image
+docker build -t git-monitor .
+
+# Run with volume mounting for logs
+docker run -d \
+  -v /home/user/git-logs:/app/logs \
+  -v /home/user/repos:/app/repos \
+  git-monitor
+```
+
+### Uninstallation
+
+#### Remove Service
+**Windows:**
+```powershell
+./target/release/git-monitor.exe stop
+./target/release/git-monitor.exe uninstall
+```
+
+**Linux:**
+```bash
+sudo ./target/release/git-monitor stop
+sudo ./target/release/git-monitor uninstall
+sudo systemctl disable git-monitor
+```
+
+#### Clean Up Files
+```bash
+# Remove application files
+rm -rf /path/to/git-monitor-installation
+
+# Remove log files (optional)
+rm -rf /path/to/your/log/directory
+
+# Remove configuration
+rm git-monitor.json
+```
+
+### Troubleshooting Installation
+
+#### Common Issues
+
+**"Cargo not found"**
+- Install Rust: https://rustup.rs/
+- Ensure cargo is in your PATH
+
+**"Permission denied" errors**
+- Run as Administrator (Windows) or with sudo (Linux)
+- Check file/directory permissions
+
+**Service installation fails**
+- Verify administrator/sudo privileges
+- Check if systemd is running (Linux)
+- Review system service logs
+
+**Git commands not being logged**
+- Verify service is running: `git-monitor status`
+- Check configuration file paths
+- Ensure shell integration is enabled
+- Restart terminal/shell sessions
+
+#### Getting Help
+1. Run requirement test script to identify missing dependencies
+2. Check service logs: `journalctl -u git-monitor` (Linux) or Event Viewer (Windows)
+3. Run in foreground mode for debugging: `git-monitor run --verbose`
+4. Open an issue at: https://github.com/bengreynolds/git-log-access/issues
+
 ## Log Format
 
 Each logged entry follows the format:
