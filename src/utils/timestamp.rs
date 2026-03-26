@@ -20,7 +20,8 @@ pub fn parse_timestamp(timestamp_str: &str) -> Option<DateTime<Local>> {
     
     // Try without timezone (assume local)
     if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S") {
-        return Some(Local.from_local_datetime(&naive_dt).single()?);
+        use chrono::TimeZone;
+        return Local.from_local_datetime(&naive_dt).single();
     }
     
     None

@@ -72,12 +72,12 @@ pub fn extract_git_command(command_line: &str) -> Option<String> {
 /// Sanitize git command by removing or masking sensitive arguments
 fn sanitize_command(command_line: &str) -> String {
     let parts: Vec<&str> = command_line.trim().split_whitespace().collect();
-    let mut sanitized_parts = Vec::new();
+    let mut sanitized_parts: Vec<String> = Vec::new();
     let mut skip_next = false;
     
     for (i, part) in parts.iter().enumerate() {
         if skip_next {
-            sanitized_parts.push("***");
+            sanitized_parts.push("***".to_string());
             skip_next = false;
             continue;
         }

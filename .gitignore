@@ -1,0 +1,93 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Windows
+*.tmp
+*.temp
+*.log
+*.manifest
+*.check
+
+# Temporary files and directories
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Distribution and packaging
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Binary releases (if building locally)
+git-monitor
+git-monitor.exe
+*.msi
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Configuration files that might contain secrets
+config/local.json
+config/production.json
+.env
+.env.local
+
+# Test artifacts
+test-output/
+coverage/
+*.profraw
+*.profdata
+
+# Performance and debugging
+perf.data
+perf.data.old
+*.pdb
+
+# Local development
+.local/
+local/
+
+# Node modules (if adding any JS tooling later)
+node_modules/
+
+# Python virtual environments (if adding any Python tooling)
+venv/
+env/
+.venv/
+
+# Rust-specific
+*.pdb
+*.wixpdb
+*.wixobj
+
+# Installation test artifacts  
+install-test/
+test-project/
+
+# Log files from testing
+*.log
+*_githistory.log

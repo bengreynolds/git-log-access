@@ -1,5 +1,4 @@
 use super::Config;
-use anyhow::Result;
 use std::path::Path;
 
 impl Config {

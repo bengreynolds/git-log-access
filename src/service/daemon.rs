@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use log::{error, info, warn, debug};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 
 /// Background service daemon for git command monitoring

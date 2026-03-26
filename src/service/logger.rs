@@ -3,7 +3,7 @@ use crate::monitor::ParsedGitCommand;
 use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -167,7 +167,7 @@ impl GitLogger {
 
         while let Some(entry) = buffer.pop_front() {
             let log_line = entry.command.to_log_entry();
-            writeln!(writer, "{}")
+            writeln!(writer, "{}", log_line)
                 .with_context(|| format!("Failed to write log entry: {}", log_line))?;
         }
 
@@ -181,12 +181,12 @@ impl GitLogger {
     /// Check if log rotation is needed and perform rotation
     fn check_and_rotate_log(log_path: &Path, config: &LogRotationConfig) -> Result<()> {
         if !config.enabled {
-            return Ok();
+            return Ok(());
         }
 
         let metadata = match std::fs::metadata(log_path) {
             Ok(meta) => meta,
-            Err(_) => return Ok(), // File doesn't exist yet
+            Err(_) => return Ok(()), // File doesn't exist yet
         };
 
         let file_size_mb = metadata.len() / (1024 * 1024);
