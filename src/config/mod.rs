@@ -160,7 +160,6 @@ impl Config {
         #[cfg(unix)]
         {
             use std::ffi::CStr;
-            use std::mem;
 
             unsafe {
                 let mut buffer = [0u8; 256];

@@ -2,6 +2,7 @@ use crate::monitor::{extract_git_command, is_git_command, ParsedGitCommand};
 use crate::service::{daemon::GitMonitorDaemon, CommandHintStore};
 use crate::utils::{format_timestamp, normalize_path, resolve_path_context};
 use anyhow::{Context, Result};
+#[cfg(windows)]
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -164,6 +165,7 @@ fn list_git_processes() -> Result<Vec<ObservedProcess>> {
     Ok(processes)
 }
 
+#[cfg(windows)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct WindowsProcessRow {
