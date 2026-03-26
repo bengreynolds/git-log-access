@@ -17,6 +17,7 @@ CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/git-monitor}"
 LOG_DIR="${LOG_DIR:-$HOME/.local/share/git-monitor}"
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
 NO_SERVICE="${NO_SERVICE:-false}"
+SILENT="${SILENT:-false}"
 
 # Log functions
 log_info() {
@@ -41,7 +42,7 @@ show_usage() {
 Git Monitor Binary Installer
 
 Usage:
-  ./install.sh [install]         # Install Git Monitor (default)
+  ./install.sh [install]         # Install Git Monitor (interactive setup)
   ./install.sh uninstall         # Remove Git Monitor
   ./install.sh --help            # Show this help
 
@@ -51,11 +52,13 @@ Environment Variables:
   LOG_DIR=/path                  # Log directory (default: ~/.local/share/git-monitor)
   FORCE_INSTALL=true             # Force overwrite existing installation
   NO_SERVICE=true                # Skip service installation
+  SILENT=true                    # Use defaults, no interactive prompts
 
 Examples:
-  INSTALL_DIR=~/.local/bin ./install.sh        # Install to user directory
+  INSTALL_DIR=~/.local/bin ./install.sh        # Install to user directory  
   FORCE_INSTALL=true ./install.sh              # Overwrite existing install
   NO_SERVICE=true ./install.sh                 # Skip service setup
+  SILENT=true ./install.sh                     # Automated install with defaults
 EOF
 }
 
@@ -154,48 +157,116 @@ install_executable() {
     return 0
 }
 
+# Get user configuration preferences
+get_user_configuration() {
+    # Use defaults for silent installation
+    if [ "$SILENT" = "true" ]; then
+        local hostname=$(hostname 2>/dev/null || echo "my-computer")
+        echo "$hostname|$LOG_DIR|100"
+        return 0
+    fi
+    
+    echo ""
+    echo -e "${BLUE}=== Git Monitor Configuration ===${NC}"
+    echo -e "${NC}Please provide your preferences for Git Monitor setup${NC}"
+    echo ""
+    
+    # Device nickname
+    local default_nickname=$(hostname 2>/dev/null || echo "my-computer")
+    echo -e "${BLUE}Device Nickname:${NC}"
+    echo -e "${NC}  This identifies your device in log entries${NC}"
+    echo -n "Device nickname [$default_nickname]: "
+    read device_nickname
+    if [ -z "$device_nickname" ]; then
+        device_nickname="$default_nickname"
+    fi
+    
+    # Log directory
+    local default_log_dir="$LOG_DIR"
+    echo ""
+    echo -e "${BLUE}Log Directory:${NC}"
+    echo -e "${NC}  Where git command logs will be stored${NC}"
+    echo -n "Log directory [$default_log_dir]: "
+    read log_dir
+    if [ -z "$log_dir" ]; then
+        log_dir="$default_log_dir"
+    fi
+    
+    # Expand ~ to home directory
+    log_dir="${log_dir/#\~/$HOME}"
+    
+    # Convert to absolute path if relative
+    if [[ "$log_dir" != /* ]]; then
+        log_dir="$(pwd)/$log_dir"
+    fi
+    
+    # Log rotation settings
+    echo ""
+    echo -e "${BLUE}Log Rotation:${NC}"
+    echo -e "${NC}  Automatically rotate logs when they get too large${NC}"
+    echo -n "Maximum log file size in MB [100]: "
+    read max_size_mb
+    if [ -z "$max_size_mb" ] || ! [[ "$max_size_mb" =~ ^[0-9]+$ ]]; then
+        max_size_mb=100
+    fi
+    
+    # Confirmation
+    echo ""
+    echo -e "${GREEN}=== Configuration Summary ===${NC}"
+    echo -e "${NC}Device Nickname: $device_nickname${NC}"
+    echo -e "${NC}Log Directory: $log_dir${NC}"
+    echo -e "${NC}Log File: $log_dir/${device_nickname}_githistory.log${NC}"
+    echo -e "${NC}Max Log Size: ${max_size_mb}MB${NC}"
+    echo ""
+    
+    echo -n "Continue with this configuration? [Y/n]: "
+    read confirm
+    if [ "$confirm" = "n" ] || [ "$confirm" = "N" ]; then
+        log_warn "Configuration cancelled by user"
+        return 1
+    fi
+    
+    echo "$device_nickname|$log_dir|$max_size_mb"
+    return 0
+}
+
 # Create user configuration
 create_config() {
-    log_info "Creating user configuration..."
+    log_info "Setting up configuration..."
+    
+    # Get user preferences
+    local config_result
+    config_result=$(get_user_configuration)
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    
+    # Parse the result
+    IFS='|' read -r device_nickname user_log_dir max_size_mb <<< "$config_result"
     
     # Create directories
     mkdir -p "$CONFIG_DIR"
-    mkdir -p "$LOG_DIR"
+    mkdir -p "$user_log_dir"
     
-    # Get hostname for device nickname
-    local hostname=$(hostname 2>/dev/null || echo "unknown")
     local config_path="$CONFIG_DIR/config.json"
+    local log_file="$user_log_dir/${device_nickname}_githistory.log"
     
-    # Don't overwrite existing config
+    # Don't overwrite existing config unless forced
     if [ -f "$config_path" ] && [ "$FORCE_INSTALL" != "true" ]; then
         log_info "Configuration already exists at $config_path"
         return 0
     fi
     
-    # Create config (use default as template if available)
-    if [ -f "git-monitor.json" ]; then
-        # Use provided default config as base
-        sed "s|\$HOME|$HOME|g; s|\$USER|$USER|g; s|\$HOSTNAME|$hostname|g" git-monitor.json > "$config_path"
-        # Update specific paths
-        if command -v jq &> /dev/null; then
-            jq ".logPath = \"$LOG_DIR/${hostname}_githistory.log\" | .deviceNickname = \"$hostname\"" "$config_path" > "$config_path.tmp" && mv "$config_path.tmp" "$config_path"
-        else
-            # Fallback: simple sed replacement
-            sed -i.bak "s|\"logPath\":.*|\"logPath\": \"$LOG_DIR/${hostname}_githistory.log\",|" "$config_path"
-            sed -i.bak "s|\"deviceNickname\":.*|\"deviceNickname\": \"$hostname\",|" "$config_path"
-            rm -f "$config_path.bak"
-        fi
-    else
-        # Create minimal config
-        cat > "$config_path" << EOF
+    # Create config
+    cat > "$config_path" << EOF
 {
-  "logPath": "$LOG_DIR/${hostname}_githistory.log",
-  "deviceNickname": "$hostname",
+  "logPath": "$log_file",
+  "deviceNickname": "$device_nickname",
   "enabledShells": ["bash", "zsh", "fish"],
   "monitorScope": "user",
   "logRotation": {
     "enabled": true,
-    "maxSizeMb": 100,
+    "maxSizeMb": $max_size_mb,
     "keepFiles": 10
   },
   "performance": {
@@ -205,10 +276,9 @@ create_config() {
   }
 }
 EOF
-    fi
     
     log_success "Created configuration at $config_path"
-    log_info "Log will be written to: $LOG_DIR/${hostname}_githistory.log"
+    log_success "Log will be written to: $log_file"
     
     return 0
 }

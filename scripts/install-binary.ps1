@@ -5,7 +5,8 @@ param(
     [string]$InstallDir = "$env:LOCALAPPDATA\Programs\GitMonitor",
     [string]$ConfigDir = "$env:APPDATA\git-monitor",
     [switch]$Force = $false,
-    [switch]$NoService = $false
+    [switch]$NoService = $false,
+    [switch]$Silent = $false
 )
 
 # Colors for output
@@ -104,57 +105,126 @@ function Install-Executable {
     }
 }
 
+function Get-UserConfiguration {
+    # Use defaults for silent installation
+    if ($Silent) {
+        $defaultNickname = $env:COMPUTERNAME
+        if (!$defaultNickname) { $defaultNickname = "my-computer" }
+        
+        return @{
+            DeviceNickname = $defaultNickname
+            LogDir = "$env:USERPROFILE\.local\share\git-monitor"
+            MaxSizeMb = 100
+        }
+    }
+    
+    Write-Host ""
+    Write-Host "=== Git Monitor Configuration ===" -ForegroundColor $Colors.Blue
+    Write-Host "Please provide your preferences for Git Monitor setup" -ForegroundColor White
+    Write-Host ""
+    
+    # Device nickname
+    $defaultNickname = $env:COMPUTERNAME
+    if (!$defaultNickname) { $defaultNickname = "my-computer" }
+    
+    Write-Host "Device Nickname:" -ForegroundColor $Colors.Blue
+    Write-Host "  This identifies your device in log entries" -ForegroundColor Gray
+    $deviceNickname = Read-Host "Device nickname [$defaultNickname]"
+    if ([string]::IsNullOrWhiteSpace($deviceNickname)) {
+        $deviceNickname = $defaultNickname
+    }
+    
+    # Log directory
+    $defaultLogDir = "$env:USERPROFILE\.local\share\git-monitor"
+    Write-Host ""
+    Write-Host "Log Directory:" -ForegroundColor $Colors.Blue
+    Write-Host "  Where git command logs will be stored" -ForegroundColor Gray
+    $logDir = Read-Host "Log directory [$defaultLogDir]"
+    if ([string]::IsNullOrWhiteSpace($logDir)) {
+        $logDir = $defaultLogDir
+    }
+    
+    # Resolve environment variables and relative paths
+    $logDir = [System.Environment]::ExpandEnvironmentVariables($logDir)
+    if (![System.IO.Path]::IsPathRooted($logDir)) {
+        $logDir = Join-Path $PWD.Path $logDir
+    }
+    
+    # Log rotation settings
+    Write-Host ""
+    Write-Host "Log Rotation:" -ForegroundColor $Colors.Blue
+    Write-Host "  Automatically rotate logs when they get too large" -ForegroundColor Gray
+    $maxSizeMb = Read-Host "Maximum log file size in MB [100]"
+    if ([string]::IsNullOrWhiteSpace($maxSizeMb) -or ![int]::TryParse($maxSizeMb, [ref]$null)) {
+        $maxSizeMb = 100
+    } else {
+        $maxSizeMb = [int]$maxSizeMb
+    }
+    
+    # Confirmation
+    Write-Host ""
+    Write-Host "=== Configuration Summary ===" -ForegroundColor $Colors.Green
+    Write-Host "Device Nickname: $deviceNickname" -ForegroundColor White
+    Write-Host "Log Directory: $logDir" -ForegroundColor White
+    Write-Host "Log File: $logDir\${deviceNickname}_githistory.log" -ForegroundColor White
+    Write-Host "Max Log Size: ${maxSizeMb}MB" -ForegroundColor White
+    Write-Host ""
+    
+    $confirm = Read-Host "Continue with this configuration? [Y/n]"
+    if ($confirm -eq 'n' -or $confirm -eq 'N') {
+        Write-Warning "Configuration cancelled by user"
+        return $null
+    }
+    
+    return @{
+        DeviceNickname = $deviceNickname
+        LogDir = $logDir
+        MaxSizeMb = $maxSizeMb
+    }
+}
+
 function New-Config {
-    Write-Info "Creating user configuration..."
+    Write-Info "Setting up configuration..."
     
     try {
+        # Get user preferences
+        $config = Get-UserConfiguration
+        if (!$config) {
+            return $false
+        }
+        
         # Create config directory
         New-Item -Path $ConfigDir -ItemType Directory -Force | Out-Null
         
-        # Get hostname for device nickname
-        $hostname = $env:COMPUTERNAME
-        if (!$hostname) { $hostname = "unknown" }
-        
-        $logDir = "$env:USERPROFILE\.local\share\git-monitor"
-        
         # Create log directory
-        New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+        New-Item -Path $config.LogDir -ItemType Directory -Force | Out-Null
         
-        # Create user config (use default as template if available)
+        # Create user config
         $configPath = "$ConfigDir\config.json"
+        $logFile = "$($config.LogDir)\$($config.DeviceNickname)_githistory.log"
         
-        if ((Test-Path "git-monitor.json") -and !(Test-Path $configPath)) {
-            # Use provided default config as base
-            $defaultConfig = Get-Content "git-monitor.json" | ConvertFrom-Json
-            $defaultConfig.logPath = "$logDir\${hostname}_githistory.log"
-            $defaultConfig.deviceNickname = $hostname
-            
-            $configJson = $defaultConfig | ConvertTo-Json -Depth 10
-        } else {
-            # Create minimal config
-            $config = @{
-                logPath = "$logDir\${hostname}_githistory.log"
-                deviceNickname = $hostname
-                enabledShells = @("powershell", "cmd")
-                monitorScope = "user"
-                logRotation = @{
-                    enabled = $true
-                    maxSizeMb = 100
-                    keepFiles = 10
-                }
-                performance = @{
-                    maxMemoryMb = 10
-                    logBufferSize = 1000
-                    flushIntervalSeconds = 30
-                }
+        $userConfig = @{
+            logPath = $logFile
+            deviceNickname = $config.DeviceNickname
+            enabledShells = @("powershell", "cmd")
+            monitorScope = "user"
+            logRotation = @{
+                enabled = $true
+                maxSizeMb = $config.MaxSizeMb
+                keepFiles = 10
             }
-            $configJson = $config | ConvertTo-Json -Depth 10
+            performance = @{
+                maxMemoryMb = 10
+                logBufferSize = 1000
+                flushIntervalSeconds = 30
+            }
         }
         
+        $configJson = $userConfig | ConvertTo-Json -Depth 10
         Set-Content -Path $configPath -Value $configJson -Encoding UTF8
         
         Write-Success "Created configuration at $configPath"
-        Write-Info "Log will be written to: $logDir\${hostname}_githistory.log"
+        Write-Success "Log will be written to: $logFile"
         
         return $true
     } catch {
@@ -332,7 +402,7 @@ switch -Regex ($args[0]) {
         Write-Host "Git Monitor Binary Installer"
         Write-Host ""
         Write-Host "Usage:"
-        Write-Host "  .\install.ps1              # Install Git Monitor"
+        Write-Host "  .\install.ps1              # Install Git Monitor (interactive)"
         Write-Host "  .\install.ps1 uninstall    # Uninstall Git Monitor"
         Write-Host ""
         Write-Host "Options:"
@@ -340,6 +410,7 @@ switch -Regex ($args[0]) {
         Write-Host "  -ConfigDir <path>          # Custom config directory"
         Write-Host "  -Force                     # Overwrite existing installation"
         Write-Host "  -NoService                 # Skip Windows service installation"
+        Write-Host "  -Silent                    # Use defaults, no interactive prompts"
         exit 1
     }
 }

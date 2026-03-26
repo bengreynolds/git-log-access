@@ -35,9 +35,31 @@ Go to [Releases](https://github.com/bengreynolds/git-log-access/releases) and do
 2. **Run installer:**
    - **Windows**: `install.ps1` (PowerShell) or `install.bat`
    - **Linux/macOS**: `./install.sh`
-3. **Follow** the setup instructions
+3. **Configure** your preferences:
+   - Device nickname (identifies your machine in logs)
+   - Log file location (where git commands will be stored)
+   - Log rotation settings (file size limits)
+4. **Confirm** and complete installation
 
 **That's it!** No dependencies, no compilation required.
+
+### Automated Installation
+
+For scripted/automated installations, use silent mode:
+
+**Windows:**
+```powershell
+# PowerShell
+.\install.ps1 -Silent
+
+# Batch file  
+.\install.bat SILENT
+```
+
+**Linux/macOS:**
+```bash
+SILENT=true ./install.sh
+```
 
 ### Test Installation (Optional)
 

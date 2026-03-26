@@ -1,11 +1,19 @@
 @echo off
 REM Git Monitor Binary Installation Batch Script
 REM Simple installer for Windows users who prefer batch files
+REM 
+REM Usage:
+REM   install.bat           - Interactive installation with configuration prompts
+REM   install.bat SILENT    - Silent installation with default settings
 
 setlocal enabledelayedexpansion
 
 set "INSTALL_DIR=%LOCALAPPDATA%\Programs\GitMonitor"
 set "CONFIG_DIR=%APPDATA%\git-monitor"
+
+REM Check for silent installation
+set "SILENT_INSTALL=false"
+if /i "%1"=="SILENT" set "SILENT_INSTALL=true"
 
 echo Git Monitor Binary Installer
 echo =============================
@@ -85,31 +93,83 @@ if errorlevel 1 (
     echo [INFO] Already in PATH
 )
 
+REM Configuration setup
+if "%SILENT_INSTALL%"=="true" (
+    echo [INFO] Silent installation - using defaults...
+    
+    REM Use defaults for silent install
+    set "DEVICE_NICKNAME=%COMPUTERNAME%"
+    if not defined DEVICE_NICKNAME set "DEVICE_NICKNAME=my-computer"
+    set "USER_LOG_DIR=%USERPROFILE%\.local\share\git-monitor"
+    set "MAX_SIZE_MB=100"
+    
+    echo [INFO] Device nickname: %DEVICE_NICKNAME%
+    echo [INFO] Log directory: %USER_LOG_DIR%
+) else (
+    REM Interactive configuration setup
+    echo.
+    echo === Git Monitor Configuration ===
+    echo Please provide your preferences for Git Monitor setup
+    echo.
+
+    REM Device nickname
+    set "DEFAULT_NICKNAME=%COMPUTERNAME%"
+    if not defined DEFAULT_NICKNAME set "DEFAULT_NICKNAME=my-computer"
+    set /p "DEVICE_NICKNAME=Device nickname [%DEFAULT_NICKNAME%]: "
+    if not defined DEVICE_NICKNAME set "DEVICE_NICKNAME=%DEFAULT_NICKNAME%"
+
+    REM Log directory  
+    set "DEFAULT_LOG_DIR=%USERPROFILE%\.local\share\git-monitor"
+    echo.
+    echo Log Directory:
+    echo   Where git command logs will be stored
+    set /p "USER_LOG_DIR=Log directory [%DEFAULT_LOG_DIR%]: "
+    if not defined USER_LOG_DIR set "USER_LOG_DIR=%DEFAULT_LOG_DIR%"
+
+    REM Log rotation
+    echo.
+    echo Log Rotation:
+    echo   Automatically rotate logs when they get too large
+    set /p "MAX_SIZE_MB=Maximum log file size in MB [100]: "
+    if not defined MAX_SIZE_MB set "MAX_SIZE_MB=100"
+
+    REM Confirmation
+    echo.
+    echo === Configuration Summary ===
+    echo Device Nickname: %DEVICE_NICKNAME%
+    echo Log Directory: %USER_LOG_DIR%
+    echo Log File: %USER_LOG_DIR%\%DEVICE_NICKNAME%_githistory.log
+    echo Max Log Size: %MAX_SIZE_MB%MB
+    echo.
+    set /p "CONFIRM=Continue with this configuration? [Y/n]: "
+    if /i "%CONFIRM%"=="n" (
+        echo Configuration cancelled by user
+        pause
+        exit /b 1
+    )
+)
+
+REM Create directories
+mkdir "%CONFIG_DIR%" 2>nul
+mkdir "%USER_LOG_DIR%" 2>nul
+
 REM Create configuration
 echo.
-echo [INFO] Creating user configuration...
-mkdir "%CONFIG_DIR%" 2>nul
-
-REM Get hostname
-set "HOSTNAME=%COMPUTERNAME%"
-if not defined HOSTNAME set "HOSTNAME=unknown"
-
-REM Create log directory
-set "LOG_DIR=%USERPROFILE%\.local\share\git-monitor"
-mkdir "%LOG_DIR%" 2>nul
+echo [INFO] Creating configuration...
 
 REM Create basic config file
 set "CONFIG_PATH=%CONFIG_DIR%\config.json"
+set "LOG_FILE_PATH=%USER_LOG_DIR%\%DEVICE_NICKNAME%_githistory.log"
 if not exist "%CONFIG_PATH%" (
     (
         echo {
-        echo   "logPath": "%LOG_DIR:\=\\%\\%HOSTNAME%_githistory.log",
-        echo   "deviceNickname": "%HOSTNAME%",
+        echo   "logPath": "%LOG_FILE_PATH:\=\\%",
+        echo   "deviceNickname": "%DEVICE_NICKNAME%",
         echo   "enabledShells": ["powershell", "cmd"],
         echo   "monitorScope": "user",
         echo   "logRotation": {
         echo     "enabled": true,
-        echo     "maxSizeMb": 100,
+        echo     "maxSizeMb": %MAX_SIZE_MB%,
         echo     "keepFiles": 10
         echo   },
         echo   "performance": {
@@ -120,7 +180,7 @@ if not exist "%CONFIG_PATH%" (
         echo }
     ) > "%CONFIG_PATH%"
     echo [SUCCESS] Created configuration at %CONFIG_PATH%
-    echo [INFO] Log will be written to: %LOG_DIR%\%HOSTNAME%_githistory.log
+    echo [SUCCESS] Log will be written to: %LOG_FILE_PATH%
 ) else (
     echo [INFO] Configuration already exists at %CONFIG_PATH%
 )
@@ -160,8 +220,12 @@ echo.
 echo Configuration:
 echo   Edit: %CONFIG_PATH%
 echo.
+echo Installation Options:
+echo   install.bat           # Interactive setup ^(what you just used^)
+echo   install.bat SILENT    # Automated setup with defaults
+echo.
 echo Getting Help:
 echo   https://github.com/bengreynolds/git-log-access
 echo.
 
-pause
+if not "%SILENT_INSTALL%"=="true" pause
