@@ -93,7 +93,23 @@ function Install-Executable {
             }
             $newPath = $newPath.TrimEnd(';')
             [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-            Write-Success "Added to PATH (restart terminal to take effect)"
+            
+            # Broadcast environment change to Windows immediately
+            Write-Info "Broadcasting environment changes to Windows..."
+            try {
+                Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class Win32 { [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult); }'
+                $HWND_BROADCAST = [IntPtr]0xffff
+                $WM_SETTINGCHANGE = 0x001a
+                $result = [UIntPtr]::Zero
+                [Win32]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, "Environment", 2, 5000, [ref]$result) | Out-Null
+                Write-Success "Environment changes broadcast to Windows"
+            } catch {
+                Write-Warning "Could not broadcast environment changes: $($_.Exception.Message)"
+            }
+            
+            # Also update current session
+            $env:PATH += ";$InstallDir"
+            Write-Success "Added to PATH and refreshed current session"
         } else {
             Write-Info "Already in PATH"
         }
@@ -271,16 +287,28 @@ function Install-Service {
     $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     
     if ($isAdmin) {
-        Write-Info "Installing as Windows service..."
+        Write-Info "Installing Git Monitor as Windows service..."
         try {
             $exePath = "$InstallDir\git-monitor.exe"
-            $result = & $exePath install 2>$null
+            
+            # Install the service
+            $result = & $exePath install 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "Service installation completed"
-                Write-Info "You can now use: git-monitor start/stop"
+                Write-Success "Service installed successfully"
+                
+                # Start the service immediately
+                Write-Info "Starting Git Monitor service..."
+                $startResult = & $exePath start 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Git Monitor service started successfully"
+                    Write-Success "✅ Git Monitor is now running and will auto-start on boot"
+                } else {
+                    Write-Warning "Service installed but failed to start: $startResult"
+                    Write-Info "You can start it manually with: git-monitor start"
+                }
             } else {
-                Write-Warning "Service installation failed"
-                Write-Info "You can still use: git-monitor run"
+                Write-Warning "Service installation failed: $result"
+                Write-Info "You can still use manual mode: git-monitor run"
             }
         } catch {
             Write-Warning "Service installation failed: $($_.Exception.Message)"
@@ -288,33 +316,63 @@ function Install-Service {
         }
     } else {
         Write-Warning "Not running as Administrator - skipping service installation"
-        Write-Info "To install as a service later, run as Administrator: git-monitor install"
+        Write-Warning "For automatic startup, run installer as Administrator"
+        Write-Info "Current mode: Manual execution only (git-monitor run)"
     }
     
     return $true
 }
 
 function Show-CompletionMessage {
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+    $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    
     Write-Host ""
     Write-Host "=== Git Monitor Installation Complete ===" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Git Monitor has been successfully installed!" -ForegroundColor White
+    Write-Host "🎉 Git Monitor has been successfully installed!" -ForegroundColor White
     Write-Host ""
-    Write-Host "Quick Start:" -ForegroundColor $Colors.Blue
-    Write-Host "  1. Restart your terminal (to refresh PATH)"
-    Write-Host "  2. Test: git-monitor run --verbose"
-    Write-Host "  3. Run some git commands in another terminal"
-    Write-Host "  4. Check your log file for entries"
-    Write-Host "  5. When ready: git-monitor start (if service installed)"
-    Write-Host ""
-    Write-Host "Commands:" -ForegroundColor $Colors.Blue
-    Write-Host "  git-monitor run --verbose    # Test in foreground"
-    Write-Host "  git-monitor status           # Check service status"
-    Write-Host "  git-monitor start/stop       # Control service"
-    Write-Host "  git-monitor --help           # Full command list"
+    
+    if ($isAdmin -and !$NoService) {
+        Write-Host "✅ AUTOMATIC STARTUP ENABLED" -ForegroundColor Green
+        Write-Host "   • Git Monitor service is running" -ForegroundColor White
+        Write-Host "   • Will automatically start on computer boot" -ForegroundColor White
+        Write-Host "   • No manual startup required!" -ForegroundColor White
+        Write-Host ""
+        
+        Write-Host "🔄 IMPORTANT: Restart your computer" -ForegroundColor Yellow
+        Write-Host "   • Ensures PATH is fully refreshed" -ForegroundColor White
+        Write-Host "   • Verifies service auto-starts correctly" -ForegroundColor White
+        Write-Host "   • After restart: git-monitor commands work everywhere" -ForegroundColor White
+        Write-Host ""
+        
+        Write-Host "Commands after restart:" -ForegroundColor $Colors.Blue
+        Write-Host "  git-monitor status           # Check if service is running"
+        Write-Host "  git-monitor --help           # Full command list"
+        Write-Host "  git-monitor run --verbose    # Test in foreground (optional)"
+    } else {
+        Write-Host "⚠️  MANUAL MODE ONLY" -ForegroundColor Yellow
+        if (!$isAdmin) {
+            Write-Host "   • Installer was not run as Administrator" -ForegroundColor White
+            Write-Host "   • Service auto-start not available" -ForegroundColor White
+        }
+        Write-Host "   • Use: git-monitor run --verbose to start monitoring" -ForegroundColor White
+        Write-Host ""
+        
+        Write-Host "🔄 Please restart your computer" -ForegroundColor Yellow
+        Write-Host "   • Ensures PATH works in all terminals" -ForegroundColor White
+        Write-Host ""
+        
+        Write-Host "Commands after restart:" -ForegroundColor $Colors.Blue
+        Write-Host "  git-monitor run --verbose    # Start monitoring (required each time)"
+        Write-Host "  git-monitor --help           # Full command list"
+    }
+    
     Write-Host ""
     Write-Host "Configuration:" -ForegroundColor $Colors.Blue
-    Write-Host "  Edit: $ConfigDir\config.json"
+    Write-Host "  Location: $ConfigDir\config.json"
+    Write-Host "  Device: $(try { (Get-Content "$ConfigDir\config.json" | ConvertFrom-Json).deviceNickname } catch { 'Configuration' })"
     Write-Host ""
     Write-Host "Getting Help:" -ForegroundColor $Colors.Blue
     Write-Host "  https://github.com/bengreynolds/git-log-access"

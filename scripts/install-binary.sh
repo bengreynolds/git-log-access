@@ -316,7 +316,7 @@ install_service() {
         return 0
     fi
     
-    log_info "Setting up system service..."
+    log_info "Setting up Git Monitor as system service..."
     
     local git_monitor_cmd
     if command -v git-monitor &> /dev/null; then
@@ -331,11 +331,19 @@ install_service() {
             if command -v systemctl &> /dev/null; then
                 log_info "Installing systemd service..."
                 if $git_monitor_cmd install 2>/dev/null; then
-                    log_success "Service installation completed"
-                    log_info "You can now use: systemctl start git-monitor"
+                    log_success "Service installed successfully"
+                    
+                    # Enable and start the service
+                    log_info "Enabling auto-start and starting service..."
+                    if sudo systemctl enable git-monitor 2>/dev/null && sudo systemctl start git-monitor 2>/dev/null; then
+                        log_success "✅ Git Monitor service started and enabled for auto-start"
+                    else
+                        log_warn "Service installed but failed to start automatically"
+                        log_info "You can start it with: sudo systemctl start git-monitor"
+                    fi
                 else
                     log_warn "Service installation failed"
-                    log_info "You can still use: git-monitor run"
+                    log_info "You can still use manual mode: git-monitor run"
                 fi
             else
                 log_warn "SystemD not available - manual startup required"
@@ -346,11 +354,19 @@ install_service() {
             # macOS LaunchAgent
             log_info "Installing macOS LaunchAgent..."
             if $git_monitor_cmd install 2>/dev/null; then
-                log_success "LaunchAgent installation completed"
-                log_info "You can now use: git-monitor start"
+                log_success "LaunchAgent installed successfully"
+                
+                # Start the service immediately
+                log_info "Starting Git Monitor service..."
+                if $git_monitor_cmd start 2>/dev/null; then
+                    log_success "✅ Git Monitor service started and will auto-start on login"
+                else
+                    log_warn "LaunchAgent installed but failed to start"
+                    log_info "You can start it with: git-monitor start"
+                fi
             else
                 log_warn "LaunchAgent installation failed"
-                log_info "You can still use: git-monitor run"
+                log_info "You can still use manual mode: git-monitor run"
             fi
             ;;
         *)
