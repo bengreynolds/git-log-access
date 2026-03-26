@@ -114,21 +114,20 @@ jobs:
         mkdir -p standalone
         cp target/${{ matrix.target }}/release/git-monitor${{ matrix.ext }} standalone/git-monitor-${{ github.ref_name || 'v1.0.0' }}-${{ matrix.name }}${{ matrix.ext }}
 
-    - name: Upload build artifacts
+    - name: Upload package artifacts
       uses: actions/upload-artifact@v4
       with:
         name: git-monitor-${{ matrix.name }}
+        path: standalone/
+        retention-days: 7
+
+    - name: Upload archive artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: git-monitor-archive-${{ matrix.name }}
         path: |
           git-monitor-*.zip
           git-monitor-*.tar.gz
-          standalone/
-        retention-days: 7
-
-    - name: Upload standalone executable artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: git-monitor-executable-${{ matrix.name }}
-        path: standalone/
         retention-days: 7
 
   test:
@@ -173,12 +172,23 @@ jobs:
         mkdir -p release-assets
         
         # Copy all archives (full packages with installers)
-        find artifacts -name "*.zip" -o -name "*.tar.gz" | while read file; do
+        find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) | while read file; do
           cp "$file" release-assets/
         done
         
-        # Copy standalone executables
-        find artifacts -path "*/standalone/*" -type f | while read file; do
+        # Copy standalone executables regardless of artifact folder layout
+        find artifacts -type f -name "git-monitor-*" | while read file; do
+          case "$file" in
+            *.zip|*.tar.gz)
+              ;;
+            *)
+              cp "$file" release-assets/
+              ;;
+          esac
+        done
+
+        # Copy generated download manifest from package artifacts when present
+        find artifacts -type f -name "DOWNLOADS.md" | while read file; do
           cp "$file" release-assets/
         done
         
