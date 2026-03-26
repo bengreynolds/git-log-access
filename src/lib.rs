@@ -17,7 +17,7 @@ pub type AppResult<T> = Result<T>;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Default configuration
-pub const DEFAULT_CONFIG_NAME: &str = "git-monitor.json";
+pub const DEFAULT_CONFIG_NAME: &str = "config.json";
 pub const DEFAULT_LOG_NAME: &str = "githistory.log";
 
 /// Performance targets

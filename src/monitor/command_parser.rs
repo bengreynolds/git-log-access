@@ -1,5 +1,5 @@
 use crate::monitor::git_detector::{extract_git_command, is_git_command, should_log_command};
-use crate::utils::{find_git_root, format_timestamp, normalize_path};
+use crate::utils::{find_git_root, format_timestamp, normalize_path, resolve_path_context};
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
@@ -84,20 +84,24 @@ impl GitCommandParser {
         }
 
         // Determine the working directory
-        let work_dir = working_dir
+        let base_dir = working_dir
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let work_dir = extract_command_working_dir(command_line, &base_dir).unwrap_or(base_dir);
 
         // Find the git repository root
-        let git_root = find_git_root(&work_dir).context("Not in a git repository")?;
-
-        // Normalize the git root path for consistent logging
-        let normalized_root =
-            normalize_path(&git_root).context("Failed to normalize git root path")?;
+        let root_dir = match find_git_root(&work_dir) {
+            Some(git_root) => {
+                normalize_path(&git_root).context("Failed to normalize git root path")?
+            }
+            None => {
+                normalize_path(&work_dir).unwrap_or_else(|_| work_dir.to_string_lossy().to_string())
+            }
+        };
 
         // Create the parsed command
         let parsed = ParsedGitCommand {
             timestamp: format_timestamp(),
-            root_dir: normalized_root,
+            root_dir,
             command: git_command,
             working_dir: Some(
                 normalize_path(&work_dir)
@@ -147,6 +151,20 @@ impl GitCommandParser {
     pub fn filters(&self) -> &[String] {
         &self.command_filters
     }
+}
+
+fn extract_command_working_dir(command_line: &str, base_dir: &PathBuf) -> Option<PathBuf> {
+    let parts: Vec<&str> = command_line.split_whitespace().collect();
+    let mut index = 0;
+    while index < parts.len() {
+        if parts[index] == "-C" {
+            let path = parts.get(index + 1)?;
+            return resolve_path_context(path.trim_matches('"').trim_matches('\''), Some(base_dir))
+                .ok();
+        }
+        index += 1;
+    }
+    None
 }
 
 /// Batch parser for processing multiple commands

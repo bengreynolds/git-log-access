@@ -1,10 +1,15 @@
 use clap::{Args, Parser, Subcommand};
-use git_log_access::{config::Config, service::daemon::GitMonitorDaemon, AppResult};
+use git_log_access::{
+    config::Config,
+    service::{daemon::GitMonitorDaemon, HookManager},
+    AppResult,
+};
 use log::info;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "git-monitor")]
-#[command(about = "Cross-platform git command monitoring service")]
+#[command(about = "Cross-platform git command monitor with hook-based interception")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -13,18 +18,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the monitoring service
+    /// Enable hook-based monitoring
     Start(StartArgs),
-    /// Stop the monitoring service
+    /// Disable hook-based monitoring
     Stop,
-    /// Install as system service
+    /// Install shell hooks
     Install(InstallArgs),
-    /// Uninstall system service
+    /// Remove installed shell hooks
     Uninstall,
-    /// Show service status
+    /// Show hook installation and interception status
     Status,
-    /// Run in foreground (for testing)
+    /// Install hooks, enable interception, and wait until Ctrl+C
     Run(RunArgs),
+    /// Internal command used by shell hooks to log git invocations
+    #[command(hide = true)]
+    Capture(CaptureArgs),
 }
 
 #[derive(Args)]
@@ -54,6 +62,22 @@ struct RunArgs {
     verbose: bool,
 }
 
+#[derive(Args)]
+struct CaptureArgs {
+    /// Configuration file path
+    #[arg(short, long)]
+    config: Option<String>,
+    /// Shell name that triggered the command
+    #[arg(long)]
+    shell: Option<String>,
+    /// Working directory of the intercepted git command
+    #[arg(long)]
+    cwd: Option<PathBuf>,
+    /// Git arguments passed by the shell hook
+    #[arg(trailing_var_arg = true)]
+    args: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() -> AppResult<()> {
     let cli = Cli::parse();
@@ -64,6 +88,10 @@ async fn main() -> AppResult<()> {
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
                 .init();
         }
+        Some(Commands::Capture(_)) => {
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error"))
+                .init();
+        }
         _ => {
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
                 .init();
@@ -72,37 +100,37 @@ async fn main() -> AppResult<()> {
 
     match cli.command {
         Some(Commands::Start(args)) => {
-            info!("Starting git monitor service...");
+            info!("Enabling git monitor interception...");
             let config = load_config(args.config)?;
             let daemon = GitMonitorDaemon::new(config)?;
             daemon.start_service().await
         }
         Some(Commands::Stop) => {
-            info!("Stopping git monitor service...");
+            info!("Disabling git monitor interception...");
             GitMonitorDaemon::stop_service().await
         }
         Some(Commands::Install(args)) => {
-            info!("Installing git monitor service...");
+            info!("Installing git monitor shell hooks...");
             let config = load_config(args.config)?;
             GitMonitorDaemon::install_service(&args.name, config).await
         }
         Some(Commands::Uninstall) => {
-            info!("Uninstalling git monitor service...");
+            info!("Removing git monitor shell hooks...");
             GitMonitorDaemon::uninstall_service().await
         }
         Some(Commands::Status) => {
-            info!("Checking git monitor service status...");
+            info!("Checking git monitor interception status...");
             GitMonitorDaemon::service_status().await
         }
         Some(Commands::Run(args)) => {
-            info!("Running git monitor in foreground (testing mode)...");
+            info!("Running git monitor in foreground hook mode...");
             let config = load_config(args.config)?;
             let daemon = GitMonitorDaemon::new(config)?;
             daemon.run_foreground().await
         }
+        Some(Commands::Capture(args)) => capture_command(args).await,
         None => {
-            // Default behavior: start service
-            info!("Starting git monitor service (default)...");
+            info!("Enabling git monitor interception (default)...");
             let config = load_config(None)?;
             let daemon = GitMonitorDaemon::new(config)?;
             daemon.start_service().await
@@ -111,14 +139,43 @@ async fn main() -> AppResult<()> {
 }
 
 fn load_config(config_path: Option<String>) -> AppResult<Config> {
-    match config_path {
-        Some(path) => {
-            info!("Loading configuration from: {}", path);
-            Config::from_file(&path)
-        }
-        None => {
-            info!("Loading default configuration");
-            Config::default_config()
-        }
+    if let Some(ref path) = config_path {
+        info!("Loading configuration from: {}", path);
+    } else {
+        info!("Loading configured or default settings");
     }
+
+    Config::load_or_default(config_path.as_deref())
+}
+
+async fn capture_command(args: CaptureArgs) -> AppResult<()> {
+    if !HookManager::is_enabled()? {
+        return Ok(());
+    }
+
+    let config = load_config(args.config)?;
+    let daemon = GitMonitorDaemon::new(config)?;
+    let command_line = build_git_command(&args.args);
+    daemon
+        .process_git_command_with_context(&command_line, args.cwd, args.shell)
+        .await
+}
+
+fn build_git_command(args: &[String]) -> String {
+    if args.is_empty() {
+        return "git".to_string();
+    }
+
+    let rendered_args = args.iter().map(|arg| {
+        if arg.contains(char::is_whitespace) || arg.contains('"') {
+            format!("\"{}\"", arg.replace('"', "\\\""))
+        } else {
+            arg.clone()
+        }
+    });
+
+    std::iter::once("git".to_string())
+        .chain(rendered_args)
+        .collect::<Vec<_>>()
+        .join(" ")
 }

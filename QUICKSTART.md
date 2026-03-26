@@ -1,18 +1,21 @@
 # Quick Install Guide
 
-## Status: Prototype
+## Status: Hook-Based Interception Ready
 
-The project builds and the Rust test suite passes, but the monitoring pipeline is not complete yet. The current `run` command is useful for exercising log output, not for capturing real git commands from your shell.
+The project builds, passes its tests, and now supports real git interception through shell hooks. The current implementation manages per-user shell integration rather than a true OS background service.
 
 ## One-Command Install
 
-### Windows (PowerShell - Run as Administrator):
+### Windows (PowerShell):
 ```powershell
 # 1. Install Rust
 winget install Rustlang.Rust.MSVC
 
 # 2. Restart terminal, then install Git Monitor
 .\install.ps1
+
+# 3. Install hooks and enable interception
+git-monitor install
 ```
 
 ### Linux/macOS:
@@ -23,43 +26,34 @@ source ~/.cargo/env
 
 # 2. Install Git Monitor
 ./install.sh
+
+# 3. Install hooks and enable interception
+git-monitor install
 ```
 
 ## What You Get
 
 - Compiled executable (`git-monitor.exe` on Windows)
 - Default configuration
-- Log writer and parser scaffold
-- Demo foreground mode for validating log output
+- Per-user shell hook installation for supported shells
+- Start/stop/status lifecycle for hook-based interception
 
 ## Quick Test After Install
 
 ```bash
-# Run demo mode
-git-monitor run --verbose
+# Show interception status
+git-monitor status
 
-# The current foreground mode emits demo git commands for validation.
-# Check the logs (path shown during install).
+# Run a git command in a supported shell
+git status
+
+# Check the configured log file
 ```
 
-## Installation Scripts
+## Current Scope
 
-- `install.ps1` - Windows PowerShell installer
-- `install.sh` - Linux/macOS bash installer
-- `scripts/test-requirements.*` - Check prerequisites
+- Ready: parser, logger, hook manager, and lifecycle commands
+- Ready: real git interception through shell profile hooks
+- Pending: true OS service management and process-table interception
 
-Both installers:
-- Check prerequisites
-- Build optimized release binary
-- Install to PATH
-- Create default config
-- Test installation
-- Show usage instructions that mark the current placeholders clearly
-
-## Current Status
-
-- Missing: Rust toolchain
-- Ready: Buildable codebase with passing tests
-- Pending: Shell integration and real service lifecycle support
-
-Next step: install Rust, build the project, and use `git-monitor run --verbose` only as a demo/logging check.
+Next step: build the project, run `git-monitor install`, restart your shell if needed, and verify `git` commands appear in the configured log.

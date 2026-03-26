@@ -222,7 +222,7 @@ function New-Config {
         $userConfig = @{
             logPath = $logFile
             deviceNickname = $config.DeviceNickname
-            enabledShells = @("powershell", "cmd")
+            enabledShells = @("powershell", "pwsh")
             monitorScope = "user"
             logRotation = @{
                 enabled = $true

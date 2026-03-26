@@ -1,7 +1,7 @@
 {
   "logPath": "C:\\GitLogs\\default\\default_githistory.log",
   "deviceNickname": "default",
-  "enabledShells": ["powershell", "cmd"],
+  "enabledShells": ["powershell", "pwsh"],
   "monitorScope": "user",
   "logRotation": {
     "enabled": true,

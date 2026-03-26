@@ -1,24 +1,25 @@
 # Git Command Monitor
 
-A Rust prototype for logging git commands with repository context. The current codebase includes configuration, parsing, buffering, and log writing primitives, but it does not yet implement real shell/process interception or production-ready service management.
+A Rust git command monitor that now intercepts real git invocations through per-user shell hooks and writes `timestamp|rootdir|command` log entries with repository context.
 
-## 🚀 Ready for Production Use
+## Current Status
 
-Git Monitor currently builds and passes its test suite, but it should be treated as a development scaffold rather than a finished monitoring product.
+Git Monitor currently builds, passes its test suite, and supports real hook-based interception for supported shells.
 
 Current scope:
-- Parser, config, and buffered log-writer primitives are implemented
-- Real shell or process monitoring is not implemented yet
-- Service install, uninstall, and status commands are still placeholders
+- Parser, config, shell hooks, and buffered log writing are implemented
+- `install`, `start`, `stop`, `status`, and `uninstall` now manage hook-based interception
+- True OS-level background service management and process-table interception are still out of scope
 
 ## ✨ Features
 
 - **Cross-platform codebase**: Windows, Linux, macOS (including Apple Silicon)
+- **Real interception**: Supported shells call back into `git-monitor capture`
 - **Structured logging**: Format `timestamp|rootdir|command`
 - **Command sanitization hooks**: Masks a limited set of sensitive arguments
 - **Log rotation**: Configurable file size limits and retention
 - **Security focused**: Local-only operation, no network transmission
-- **CLI scaffolding**: Commands for future service lifecycle management
+- **CLI lifecycle**: Commands manage hook installation and interception state
 
 ## 📦 Installation Options
 
@@ -28,7 +29,7 @@ Choose your preferred installation method based on your needs and environment:
 
 | Method | Best For | Pros | Cons |
 |--------|----------|------|------|
-| **Pre-Built Binaries** | Most users, production use | ✅ Fast setup<br>✅ No dependencies<br>✅ Interactive config | ❌ Manual updates |
+| **Pre-Built Binaries** | Most users | ✅ Fast setup<br>✅ No dependencies<br>✅ Interactive config | ❌ Manual updates |
 | **One-Line Install** | Quick testing, CI/CD | ✅ Single command<br>✅ Always latest | ❌ Requires internet<br>❌ Coming soon |
 | **Package Managers** | System administrators | ✅ Automatic updates<br>✅ System integration | ❌ Planned feature<br>❌ Platform dependent |
 | **Docker/Container** | Containerized environments | ✅ Isolated<br>✅ Reproducible | ❌ Container overhead<br>❌ Complex setup |
@@ -260,7 +261,7 @@ tail -f /path/to/your/githistory.log
 
 ## 🏗️ Architecture
 
-The service consists of three main components working together:
+The tool currently consists of three main components working together:
 
 ```
 git-monitor.exe                  # Single executable
@@ -289,7 +290,7 @@ Git Monitor uses a JSON configuration file with the following structure:
 {
   "logPath": "/var/log/git-monitor/git-commands.log",
   "deviceNickname": "my-laptop", 
-  "enabledShells": ["bash", "zsh", "powershell", "cmd"],
+  "enabledShells": ["bash", "zsh", "powershell", "pwsh"],
   "monitorScope": "user",
   "logRotation": {
     "enabled": true,
@@ -307,11 +308,11 @@ Git Monitor uses a JSON configuration file with the following structure:
 **Configuration Options:**
 - `logPath` - Full path where git command logs are written
 - `deviceNickname` - Identifier for this device in log entries
-- `enabledShells` - Array of shells to monitor (bash, zsh, powershell, cmd, fish)
+- `enabledShells` - Array of shells to monitor (bash, zsh, powershell, pwsh, fish, sh)
 - `monitorScope` - "user" or "system" level monitoring
 - `logRotation.maxSizeMb` - Log rotation trigger size (default: 100MB)
 - `logRotation.keepFiles` - Number of rotated log files to retain
-- `performance.maxMemoryMb` - Memory usage limit for the service
+- `performance.maxMemoryMb` - Memory usage limit for the monitor
 - `performance.logBufferSize` - Number of commands to buffer before writing
 - `performance.flushIntervalSeconds` - Maximum time before forcing a log write
 
@@ -324,7 +325,7 @@ If you need to modify settings after installation:
 sudo nano /etc/git-monitor/config.json  # Linux/macOS
 notepad "C:\ProgramData\GitMonitor\config.json"  # Windows
 
-# Restart service to apply changes
+# Re-enable interception to apply changes
 git-monitor stop
 git-monitor start
 ```
@@ -334,20 +335,20 @@ git-monitor start
 ### Service Management
 
 ```bash
-# Start the placeholder daemon loop
+# Enable installed hook-based interception
 git-monitor start
 
-# Stop command is currently a placeholder
+# Disable interception without removing hooks
 git-monitor stop
 
-# Status is currently a placeholder
+# Show hook installation and enabled state
 git-monitor status
 
-# Run demo mode in the foreground
+# Install hooks, enable interception, and wait until Ctrl+C
 git-monitor run --verbose
 ```
 
-`run --verbose` currently logs simulated git commands for validation. It does not intercept real shell commands yet.
+`install` writes hook blocks into supported shell profiles. `capture` is an internal subcommand invoked by those hooks when you run `git`.
 
 ### Log Format
 
@@ -383,7 +384,7 @@ git-monitor start
 # Stop monitoring
 git-monitor stop
 
-# Check service status
+# Check interception status
 git-monitor status
 
 # Run in foreground (for testing)
@@ -428,13 +429,13 @@ git-monitor status
 # Run in foreground for debugging
 git-monitor run --verbose
 
-# Restart service
+# Re-enable interception
 git-monitor stop
 git-monitor start
 ```
 
 **Git commands not being logged:**
-- Verify service is running: `git-monitor status`
+- Verify interception is enabled: `git-monitor status`
 - Check log file location (shown during installation)
 - Ensure git commands are being run in monitored directories
 - Wait a few seconds - logging is buffered for performance
@@ -462,7 +463,7 @@ Include the output of `git-monitor status` and your platform information in any 
 ### Performance Characteristics
 - **Memory**: <10MB RAM usage typical
 - **CPU**: <0.1% idle, <1% during active git usage
-- **Startup**: <2 seconds service initialization
+- **Startup**: <2 seconds hook initialization
 - **Logging**: Buffered writes reduce disk I/O
 
 ### Security Features
@@ -474,7 +475,7 @@ Include the output of `git-monitor status` and your platform information in any 
 ### Uninstallation
 
 ```bash
-# Stop and remove service
+# Disable interception and remove hooks
 git-monitor stop
 git-monitor uninstall
 
@@ -505,8 +506,8 @@ cargo run -- --help
 ```
 
 ### Project Structure
-- **src/main.rs**: CLI interface with service commands
-- **src/service/**: Background service and logging  
+- **src/main.rs**: CLI interface with hook lifecycle commands
+- **src/service/**: Hook lifecycle management and logging  
 - **src/monitor/**: Git command detection and parsing
 - **src/config/**: Configuration management
 - **scripts/**: Installation scripts for all platforms
@@ -525,7 +526,7 @@ cargo fmt                   # Code formatting
 ./scripts/test-requirements.sh   # Linux/macOS
 
 # Manual testing
-cargo run -- run --verbose      # Test the service
+cargo run -- run --verbose      # Test hook installation flow
 ```
 
 ### Contributing Guidelines
@@ -538,7 +539,7 @@ cargo run -- run --verbose      # Test the service
 6. **Submit a pull request**
 
 **Areas needing help:**
-- Windows service integration improvements
+- Additional hook integration and shell support improvements
 - Additional shell support (fish, nushell)
 - Performance optimizations
 - Package manager distributions
@@ -555,14 +556,14 @@ cargo run -- run --verbose      # Test the service
 
 ## 📋 Changelog
 
-### v1.0.0 - Production Ready
+### Current Snapshot
 - ✅ Complete cross-platform implementation (Windows, Linux, macOS)
 - ✅ Binary distribution with automated releases
 - ✅ One-command installation across all platforms
-- ✅ Background service with auto-start capabilities
+- ✅ Hook-based shell interception
 - ✅ Command sanitization and security features
 - ✅ Structured logging with timestamp|rootdir|command format
 - ✅ Log rotation and performance optimization
 - ✅ Comprehensive testing and documentation
 
-**Ready for production use** - No Phase 2 needed, this is the complete system!
+**Current implementation:** real shell-hook interception is available, but true OS service management is still not part of the system.

@@ -42,6 +42,33 @@ pub struct PerformanceConfig {
 }
 
 impl Config {
+    /// Default configuration directory
+    pub fn default_config_dir() -> Result<PathBuf> {
+        #[cfg(windows)]
+        {
+            let appdata = std::env::var("APPDATA").or_else(|_| std::env::var("USERPROFILE"));
+            let base = appdata.context("Could not determine config directory")?;
+            Ok(PathBuf::from(base).join("git-monitor"))
+        }
+        #[cfg(unix)]
+        {
+            let config_home = std::env::var("XDG_CONFIG_HOME")
+                .or_else(|_| std::env::var("HOME").map(|home| format!("{home}/.config")))
+                .context("Could not determine config directory")?;
+            Ok(PathBuf::from(config_home).join("git-monitor"))
+        }
+    }
+
+    /// Default configuration path
+    pub fn default_config_path() -> Result<PathBuf> {
+        Ok(Self::default_config_dir()?.join(crate::DEFAULT_CONFIG_NAME))
+    }
+
+    /// State directory used by hook-based monitoring
+    pub fn default_state_dir() -> Result<PathBuf> {
+        Self::default_config_dir()
+    }
+
     /// Load configuration from file
     pub fn from_file(path: &str) -> Result<Self> {
         let content = fs::read_to_string(path)
@@ -53,10 +80,39 @@ impl Config {
 
     /// Save configuration to file
     pub fn to_file(&self, path: &str) -> Result<()> {
+        if let Some(parent) = PathBuf::from(path).parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create config directory: {:?}", parent))?;
+        }
+
         let content = serde_json::to_string_pretty(self)?;
         fs::write(path, content)
             .with_context(|| format!("Failed to write config file: {}", path))?;
         Ok(())
+    }
+
+    /// Load the configured file if it exists, otherwise create an in-memory default config
+    pub fn load_or_default(config_path: Option<&str>) -> Result<Self> {
+        match config_path {
+            Some(path) => Self::from_file(path),
+            None => {
+                let default_path = Self::default_config_path()?;
+                if default_path.exists() {
+                    Self::from_file(&default_path.to_string_lossy())
+                } else {
+                    Self::default_config()
+                }
+            }
+        }
+    }
+
+    /// Persist the config to the default path when no explicit path is supplied
+    pub fn ensure_default_file(&self) -> Result<PathBuf> {
+        let path = Self::default_config_path()?;
+        if !path.exists() {
+            self.to_file(&path.to_string_lossy())?;
+        }
+        Ok(path)
     }
 
     /// Create default configuration
@@ -133,13 +189,6 @@ impl Config {
             }
             if Self::command_exists("pwsh") {
                 shells.push("pwsh".to_string());
-            }
-            // Check for Command Prompt (always available on Windows)
-            shells.push("cmd".to_string());
-
-            // Check for WSL
-            if Self::command_exists("wsl") {
-                shells.push("wsl".to_string());
             }
         }
 

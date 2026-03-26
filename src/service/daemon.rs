@@ -1,12 +1,11 @@
 use crate::config::Config;
-use crate::monitor::{GitCommandParser, ParsedGitCommand};
-use crate::service::logger::GitLogger;
+use crate::monitor::GitCommandParser;
+use crate::service::{GitLogger, HookManager, HookStatus};
 use anyhow::{Context, Result};
-use log::{debug, error, info, warn};
+use log::info;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration};
 
 /// Background service daemon for git command monitoring
 pub struct GitMonitorDaemon {
@@ -60,14 +59,7 @@ impl GitMonitorDaemon {
 
     /// Start the daemon service
     pub async fn start_service(&self) -> Result<()> {
-        let mut running = self.running.write().await;
-        if *running {
-            warn!("Service is already running");
-            return Ok(());
-        }
-        *running = true;
-
-        info!("Starting Git Monitor Daemon");
+        info!("Enabling Git Monitor shell interception");
 
         // Initialize stats
         {
@@ -76,74 +68,44 @@ impl GitMonitorDaemon {
             stats.last_activity = Some(Instant::now());
         }
 
-        // Start logger service
-        self.logger.start().await?;
-
-        // Start monitoring loops
-        self.start_monitoring_tasks().await?;
-
-        info!("Git Monitor Daemon started successfully");
-
-        // Keep service running
-        let running = Arc::clone(&self.running);
-        while *running.read().await {
-            sleep(Duration::from_secs(1)).await;
-        }
-
+        let _path = self.config.ensure_default_file()?;
+        let status = HookManager::install(&self.config)?;
+        Self::print_status(&status);
         Ok(())
     }
 
     /// Stop the daemon service
     pub async fn stop_service() -> Result<()> {
         info!("Stopping Git Monitor Daemon");
-        // Note: In a real implementation, this would send a signal to the running daemon
-        // For now, this is a placeholder
+        let config = Config::load_or_default(None)?;
+        HookManager::set_enabled(&config, false)?;
         Ok(())
     }
 
     /// Install as system service
-    pub async fn install_service(_service_name: &str, _config: Config) -> Result<()> {
-        info!("Installing Git Monitor as system service");
-
-        #[cfg(windows)]
-        {
-            // TODO: Implement Windows service installation
-            warn!("Windows service installation not yet implemented");
-        }
-
-        #[cfg(unix)]
-        {
-            // TODO: Implement systemd service installation
-            warn!("Systemd service installation not yet implemented");
-        }
-
+    pub async fn install_service(_service_name: &str, config: Config) -> Result<()> {
+        info!("Installing Git Monitor shell hooks");
+        let _path = config.ensure_default_file()?;
+        let status = HookManager::install(&config)?;
+        Self::print_status(&status);
         Ok(())
     }
 
     /// Uninstall system service
     pub async fn uninstall_service() -> Result<()> {
-        info!("Uninstalling Git Monitor system service");
-
-        #[cfg(windows)]
-        {
-            // TODO: Implement Windows service uninstallation
-            warn!("Windows service uninstallation not yet implemented");
-        }
-
-        #[cfg(unix)]
-        {
-            // TODO: Implement systemd service uninstallation
-            warn!("Systemd service uninstallation not yet implemented");
-        }
-
+        info!("Uninstalling Git Monitor shell hooks");
+        let config = Config::load_or_default(None)?;
+        let status = HookManager::uninstall(&config)?;
+        Self::print_status(&status);
         Ok(())
     }
 
     /// Check service status
     pub async fn service_status() -> Result<()> {
         info!("Checking Git Monitor service status");
-        // TODO: Implement service status checking
-        println!("Service status: Not implemented yet");
+        let config = Config::load_or_default(None)?;
+        let status = HookManager::status(&config)?;
+        Self::print_status(&status);
         Ok(())
     }
 
@@ -151,96 +113,14 @@ impl GitMonitorDaemon {
     pub async fn run_foreground(&self) -> Result<()> {
         info!("Running Git Monitor in foreground mode");
 
-        // Start logger
-        self.logger.start().await?;
-
-        // Simulate command monitoring (for testing)
-        self.run_test_monitoring().await?;
-
-        Ok(())
-    }
-
-    /// Start monitoring tasks
-    async fn start_monitoring_tasks(&self) -> Result<()> {
-        info!("Starting git command monitoring tasks");
-
-        // For now, we'll just start a placeholder monitoring task
-        // Real shell integration will be implemented in Phase 2
-        let stats = Arc::clone(&self.stats);
-        let logger = Arc::clone(&self.logger);
-        let running = Arc::clone(&self.running);
-
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(10));
-
-            while *running.read().await {
-                interval.tick().await;
-
-                // Update last activity
-                {
-                    let mut stats = stats.write().await;
-                    stats.last_activity = Some(Instant::now());
-                }
-
-                // Log service heartbeat
-                debug!("Git monitor daemon heartbeat");
-
-                // Flush logger periodically
-                if let Err(e) = logger.flush().await {
-                    error!("Failed to flush logger: {}", e);
-                }
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Run test monitoring (simulates git commands for testing)
-    async fn run_test_monitoring(&self) -> Result<()> {
-        info!("Running test monitoring mode");
-
-        // Create some test git commands
-        let test_commands = vec![
-            "git status",
-            "git add .",
-            "git commit -m 'test commit'",
-            "git push origin main",
-            "git pull origin develop",
-        ];
-
-        for (i, cmd) in test_commands.iter().enumerate() {
-            sleep(Duration::from_secs(2)).await;
-
-            let parsed_cmd = ParsedGitCommand {
-                timestamp: crate::utils::format_timestamp(),
-                root_dir: format!("/test/repo{}", i),
-                command: cmd.to_string(),
-                working_dir: Some("/test".to_string()),
-                shell_context: Some("test-shell".to_string()),
-            };
-
-            if let Err(e) = self.logger.log_command(parsed_cmd).await {
-                error!("Failed to send test command: {}", e);
-            } else {
-                info!("Logged test command: {}", cmd);
-            }
-
-            // Update stats
-            {
-                let mut stats = self.stats.write().await;
-                stats.commands_processed += 1;
-                stats.commands_logged += 1;
-                stats.last_activity = Some(Instant::now());
-            }
-        }
-
-        // Keep running for a bit to allow processing
-        info!("Test monitoring completed, keeping service active...");
-        sleep(Duration::from_secs(5)).await;
-
-        // Flush final logs
-        self.logger.flush().await?;
-
+        let _path = self.config.ensure_default_file()?;
+        let status = HookManager::install(&self.config)?;
+        Self::print_status(&status);
+        info!("Foreground mode active. Press Ctrl+C to disable interception and exit.");
+        tokio::signal::ctrl_c()
+            .await
+            .context("Failed while waiting for Ctrl+C")?;
+        HookManager::set_enabled(&self.config, false)?;
         Ok(())
     }
 
@@ -250,14 +130,26 @@ impl GitMonitorDaemon {
         command_line: &str,
         working_dir: Option<std::path::PathBuf>,
     ) -> Result<()> {
+        self.process_git_command_with_context(command_line, working_dir, None)
+            .await
+    }
+
+    /// Process a git command (called by shell integration)
+    pub async fn process_git_command_with_context(
+        &self,
+        command_line: &str,
+        working_dir: Option<std::path::PathBuf>,
+        shell_context: Option<String>,
+    ) -> Result<()> {
         let parser = self.parser.read().await;
 
-        match parser.parse_command(command_line, working_dir)? {
+        match parser.parse_command_with_context(command_line, working_dir, shell_context)? {
             Some(parsed_cmd) => {
                 self.logger
                     .log_command(parsed_cmd)
                     .await
                     .context("Failed to send command to logger")?;
+                self.logger.flush().await?;
 
                 // Update stats
                 {
@@ -309,63 +201,39 @@ impl GitMonitorDaemon {
     pub fn config(&self) -> &Config {
         &self.config
     }
-}
 
-// Platform-specific service management implementations
-
-#[cfg(windows)]
-mod windows_service {
-    //! Windows Service implementation
-    //! This will be implemented in Phase 2
-
-    use super::*;
-
-    pub async fn install_windows_service(_name: &str, _config: &Config) -> Result<()> {
-        // TODO: Implement using windows-service crate
-        warn!("Windows service installation will be implemented in Phase 2");
-        Ok(())
-    }
-
-    pub async fn uninstall_windows_service(_name: &str) -> Result<()> {
-        // TODO: Implement service removal
-        warn!("Windows service uninstallation will be implemented in Phase 2");
-        Ok(())
-    }
-
-    pub async fn get_windows_service_status(_name: &str) -> Result<String> {
-        // TODO: Check service status
-        Ok("Unknown".to_string())
-    }
-}
-
-#[cfg(unix)]
-mod unix_service {
-    //! Unix/Linux systemd service implementation
-    //! This will be implemented in Phase 2
-
-    use super::*;
-
-    pub async fn install_systemd_service(_name: &str, _config: &Config) -> Result<()> {
-        // TODO: Create systemd service file
-        warn!("Systemd service installation will be implemented in Phase 2");
-        Ok(())
-    }
-
-    pub async fn uninstall_systemd_service(_name: &str) -> Result<()> {
-        // TODO: Remove systemd service
-        warn!("Systemd service uninstallation will be implemented in Phase 2");
-        Ok(())
-    }
-
-    pub async fn get_systemd_service_status(_name: &str) -> Result<String> {
-        // TODO: Check systemd service status
-        Ok("Unknown".to_string())
+    fn print_status(status: &HookStatus) {
+        println!(
+            "Interception: {}",
+            if status.enabled {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        );
+        for target in &status.targets {
+            if target.supported {
+                println!(
+                    "{}: {} ({})",
+                    target.shell,
+                    if target.installed {
+                        "installed"
+                    } else {
+                        "missing"
+                    },
+                    target.path.display()
+                );
+            } else {
+                println!("{}: unsupported", target.shell);
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::TempDir;
 
     async fn create_test_daemon() -> (GitMonitorDaemon, TempDir) {
@@ -389,11 +257,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_git_command() {
-        let (_daemon, _temp_dir) = create_test_daemon().await;
+        let (daemon, temp_dir) = create_test_daemon().await;
+        let repo_dir = temp_dir.path().join("repo");
+        fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        fs::write(
+            repo_dir.join(".git").join("config"),
+            "[core]\n\trepositoryformatversion = 0\n",
+        )
+        .unwrap();
 
-        // Note: This test would need a proper git repository context
-        // For now, we test that the function doesn't panic
-        // Full testing will be done with integration tests
+        daemon
+            .process_git_command_with_context(
+                "git status",
+                Some(repo_dir.clone()),
+                Some("test-shell".to_string()),
+            )
+            .await
+            .unwrap();
+
+        let content = fs::read_to_string(temp_dir.path().join("test.log")).unwrap();
+        assert!(content.contains("git status"));
     }
 
     #[tokio::test]

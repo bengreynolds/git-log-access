@@ -58,10 +58,10 @@ pub fn normalize_path<P: AsRef<Path>>(path: P) -> Result<String> {
 }
 
 /// Resolve relative paths and working directory references
-pub fn resolve_path_context<P: AsRef<Path>>(path: P, working_dir: Option<P>) -> Result<PathBuf>
-where
-    P: AsRef<Path>,
-{
+pub fn resolve_path_context<P: AsRef<Path>, W: AsRef<Path>>(
+    path: P,
+    working_dir: Option<W>,
+) -> Result<PathBuf> {
     let path = path.as_ref();
 
     if path.is_absolute() {
