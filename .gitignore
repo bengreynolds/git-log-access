@@ -35,6 +35,7 @@ tmp/
 
 # Distribution and packaging
 dist/
+release-dist/
 build/
 *.egg-info/
 __pycache__/
@@ -44,11 +45,11 @@ __pycache__/
 # Binary releases (if building locally)
 git-monitor
 git-monitor.exe
+git-monitor-v*.zip
+git-monitor-v*.tar.gz
 *.msi
 *.deb
 *.rpm
-*.tar.gz
-*.zip
 
 # Configuration files that might contain secrets
 config/local.json
