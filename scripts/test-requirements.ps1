@@ -244,18 +244,14 @@ function Test-BuildRequirements {
         New-Item -Path $tempDir -ItemType Directory | Out-Null
         Push-Location $tempDir
         
-        if (cargo init test-project --name test 2>$null) {
+        try {
+            cargo init test-project --name test *>$null
             Push-Location "test-project"
-            if (cargo check 2>$null) {
-                Write-Pass "Rust compilation works"
-            } else {
-                Write-Error "Rust compilation failed"
-                Write-Host "  Fix: Check Rust installation or try: rustup update" -ForegroundColor Yellow
-            }
-            Pop-Location
-        } else {
-            Write-Error "Cannot create test Rust project"
-            Write-Host "  Fix: Check Rust installation" -ForegroundColor Yellow
+            cargo check *>$null
+            Write-Pass "Rust compilation works"
+        } catch {
+            Write-Error "Rust compilation failed"
+            Write-Host "  Fix: Check Rust installation or try: rustup update" -ForegroundColor Yellow
         }
     } catch {
         Write-Error "Build test failed: $($_.Exception.Message)"
