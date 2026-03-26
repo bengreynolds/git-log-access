@@ -18,9 +18,24 @@ Git Monitor is **complete and ready to use** with automated binary releases for 
 - **Simple installation**: One-command setup with automated installers
 - **Security focused**: Local-only operation, no network transmission
 
-## 📦 Quick Installation
+## 📦 Installation Options
 
-### Download Pre-Built Binaries (Recommended)
+Choose your preferred installation method based on your needs and environment:
+
+### 🎯 Which Installation Method Should I Choose?
+
+| Method | Best For | Pros | Cons |
+|--------|----------|------|------|
+| **Pre-Built Binaries** | Most users, production use | ✅ Fast setup<br>✅ No dependencies<br>✅ Interactive config | ❌ Manual updates |
+| **One-Line Install** | Quick testing, CI/CD | ✅ Single command<br>✅ Always latest | ❌ Requires internet<br>❌ Coming soon |
+| **Package Managers** | System administrators | ✅ Automatic updates<br>✅ System integration | ❌ Planned feature<br>❌ Platform dependent |
+| **Docker/Container** | Containerized environments | ✅ Isolated<br>✅ Reproducible | ❌ Container overhead<br>❌ Complex setup |
+| **Build from Source** | Developers, custom needs | ✅ Latest features<br>✅ Customizable | ❌ Requires Rust<br>❌ Longer setup |
+| **Development Install** | Contributors, testing | ✅ Easy development<br>✅ No installation | ❌ Not for production |
+
+### Method 1: Pre-Built Binaries (Recommended)
+
+**Best for:** Most users wanting quick, reliable setup
 
 Go to [Releases](https://github.com/bengreynolds/git-log-access/releases) and download for your platform:
 
@@ -29,8 +44,7 @@ Go to [Releases](https://github.com/bengreynolds/git-log-access/releases) and do
 - **macOS Intel**: `git-monitor-v*-macos-x64.tar.gz`
 - **macOS Apple Silicon**: `git-monitor-v*-macos-arm64.tar.gz`
 
-### Install Steps
-
+**Install Steps:**
 1. **Extract** the downloaded archive
 2. **Run installer:**
    - **Windows**: `install.ps1` (PowerShell) or `install.bat`
@@ -41,30 +55,197 @@ Go to [Releases](https://github.com/bengreynolds/git-log-access/releases) and do
    - Log rotation settings (file size limits)
 4. **Confirm** and complete installation
 
-**That's it!** No dependencies, no compilation required.
+### Method 2: One-Line Install (Coming Soon)
 
-### Automated Installation
+**Best for:** Quick setup and CI/CD environments
 
-For scripted/automated installations, use silent mode:
-
-**Windows:**
+**Windows (PowerShell):**
 ```powershell
-# PowerShell
-.\install.ps1 -Silent
-
-# Batch file  
-.\install.bat SILENT
+# Coming in v1.1.0
+irm https://git-monitor.dev/install.ps1 | iex
 ```
 
-**Linux/macOS:**
+**Linux/macOS (Bash):**
 ```bash
+# Coming in v1.1.0  
+curl -fsSL https://git-monitor.dev/install.sh | sh
+```
+
+### Method 3: Package Managers (Planned)
+
+**Best for:** Users who prefer package management
+
+**Windows (Chocolatey):**
+```cmd
+# Planned for v1.2.0
+choco install git-monitor
+```
+
+**macOS (Homebrew):**
+```bash  
+# Planned for v1.2.0
+brew install git-monitor
+```
+
+**Linux (APT):**
+```bash
+# Planned for v1.2.0
+sudo apt install git-monitor
+```
+
+### Method 4: Container/Docker
+
+**Best for:** Containerized environments and isolation
+
+**Docker Hub:**
+```bash
+# Pull and run
+docker pull gitmonitor/git-monitor:latest
+docker run -d \
+  -v /home/user/git-logs:/app/logs \
+  -v /home/user/repos:/app/repos \
+  --name git-monitor \
+  gitmonitor/git-monitor:latest
+```
+
+**Docker Compose:**
+```yaml
+version: '3.8'
+services:
+  git-monitor:
+    image: gitmonitor/git-monitor:latest
+    volumes:
+      - ./logs:/app/logs
+      - ./repos:/app/repos
+    environment:
+      - DEVICE_NICKNAME=docker-dev
+      - LOG_PATH=/app/logs/git-commands.log
+```
+
+### Method 5: Build from Source
+
+**Best for:** Developers, custom builds, and latest features
+
+**Prerequisites:**
+- Rust 1.70+ with Cargo
+- Git 2.0+
+
+**Build Instructions:**
+```bash
+# Clone repository
+git clone https://github.com/bengreynolds/git-log-access.git
+cd git-log-access
+
+# Build release binary
+cargo build --release
+
+# Binary will be created at: target/release/git-monitor(.exe)
+```
+
+**System Requirements for Building:**
+- **Windows**: Visual Studio Build Tools, Windows SDK
+- **Linux**: gcc/clang compiler, libc development headers  
+- **macOS**: Xcode Command Line Tools
+
+**Install After Building:**
+```bash
+# Copy binary to PATH location
+# Windows
+copy target\release\git-monitor.exe %LOCALAPPDATA%\Programs\GitMonitor\
+# Linux/macOS  
+sudo cp target/release/git-monitor /usr/local/bin/
+
+# Create configuration manually or run installer
+./target/release/git-monitor --help
+```
+
+### Method 6: Development/Testing Install
+
+**Best for:** Contributors and testing
+
+```bash
+# Clone and run without installing
+git clone https://github.com/bengreynolds/git-log-access.git
+cd git-log-access
+
+# Run directly with Cargo
+cargo run -- run --verbose
+
+# Or install from crate (when published)
+cargo install git-monitor
+```
+
+### 🔧 Specialized Installation Scenarios
+
+**Corporate/Restricted Environments:**
+```bash
+# Download and verify binaries manually
+wget https://github.com/bengreynolds/git-log-access/releases/download/v1.0.0/git-monitor-v1.0.0-linux-x64.tar.gz
+# Verify checksums, scan with antivirus, then extract and install
+
+# Use custom installation directory
+INSTALL_DIR=/opt/local/bin ./install.sh
+```
+
+**Multi-User Systems:**
+```bash
+# System-wide installation (Linux/macOS)
+sudo INSTALL_DIR=/usr/local/bin CONFIG_DIR=/etc/git-monitor ./install.sh
+
+# Per-user installation (Linux/macOS)  
+INSTALL_DIR=~/.local/bin CONFIG_DIR=~/.config/git-monitor ./install.sh
+```
+
+**Air-Gapped Networks:**
+```bash
+# Download release bundle on connected machine
+# Transfer git-monitor-v*-platform.zip to target machine
+# Extract and run installer normally - no internet required
+```
+
+**Build Servers/CI Systems:**
+```yml
+# GitHub Actions example
+- name: Install Git Monitor
+  run: |
+    wget -q https://github.com/bengreynolds/git-log-access/releases/latest/download/git-monitor-v*-linux-x64.tar.gz
+    tar -xzf git-monitor-*.tar.gz
+    SILENT=true DEVICE_NICKNAME="ci-${{ github.run_id }}" ./install.sh
+```
+
+### Automated/Silent Installation
+
+For scripted deployments or CI/CD, all installation methods support silent mode:
+
+**Pre-Built Binary Installers:**
+```powershell
+# Windows PowerShell
+.\install.ps1 -Silent
+
+# Windows Batch
+.\install.bat SILENT
+
+# Linux/macOS Bash
 SILENT=true ./install.sh
 ```
 
-### Test Installation (Optional)
+**Environment Variables for Customization:**  
+```bash
+# Customize installation paths and settings
+INSTALL_DIR=/custom/path ./install.sh
+DEVICE_NICKNAME="build-server" LOG_DIR="/var/log/git-monitor" ./install.sh
+```
+
+### Verification & Testing
+
+After installation with any method, verify everything is working:
 
 ```bash
-# Run in test mode
+# Check installation
+git-monitor --help
+git-monitor status
+
+# Run in test mode (all methods)
 git-monitor run --verbose
 
 # In another terminal, run some git commands
@@ -72,6 +253,7 @@ git status
 git log --oneline
 
 # Check your log file (path shown during install)
+tail -f /path/to/your/githistory.log
 ```
 
 ## 🏗️ Architecture
@@ -92,29 +274,44 @@ git-monitor.exe                  # Single executable
 - **Security first**: Local operation only, command sanitization
 - **Cross-platform**: Same code runs on Windows, Linux, macOS
 
-## ⚙️ Configuration
+## ⚙️ Configuration Details
 
-Git Monitor uses a simple JSON configuration file created during installation.
+Git Monitor uses a JSON configuration file with the following structure:
 
-**Configuration Location:**
-- **Windows**: `%PROGRAMDATA%\GitMonitor\config.json`
-- **Linux/macOS**: `/etc/git-monitor/config.json`
+**Configuration Locations:**
+- **Windows**: `%APPDATA%\git-monitor\config.json` (user install) or `%PROGRAMDATA%\GitMonitor\config.json` (system install)
+- **Linux/macOS**: `~/.config/git-monitor/config.json` (user) or `/etc/git-monitor/config.json` (system)
 
-**Example Configuration:**
+**Full Configuration Example:**
 ```json
 {
-  "log_file": "/var/log/git-monitor/git-commands.log",
-  "device_nickname": "my-laptop",
-  "max_filesize_mb": 100,
-  "buffer_size": 1000
+  "logPath": "/var/log/git-monitor/git-commands.log",
+  "deviceNickname": "my-laptop", 
+  "enabledShells": ["bash", "zsh", "powershell", "cmd"],
+  "monitorScope": "user",
+  "logRotation": {
+    "enabled": true,
+    "maxSizeMb": 100,
+    "keepFiles": 10
+  },
+  "performance": {
+    "maxMemoryMb": 10,
+    "logBufferSize": 1000,
+    "flushIntervalSeconds": 30
+  }
 }
 ```
 
 **Configuration Options:**
-- `log_file` - Where to write git command logs
-- `device_nickname` - Identifier for this device in logs
-- `max_filesize_mb` - Log rotation trigger (default: 100MB)
-- `buffer_size` - Commands to buffer before writing (default: 1000)
+- `logPath` - Full path where git command logs are written
+- `deviceNickname` - Identifier for this device in log entries
+- `enabledShells` - Array of shells to monitor (bash, zsh, powershell, cmd, fish)
+- `monitorScope` - "user" or "system" level monitoring
+- `logRotation.maxSizeMb` - Log rotation trigger size (default: 100MB)
+- `logRotation.keepFiles` - Number of rotated log files to retain
+- `performance.maxMemoryMb` - Memory usage limit for the service
+- `performance.logBufferSize` - Number of commands to buffer before writing
+- `performance.flushIntervalSeconds` - Maximum time before forcing a log write
 
 ### Manual Configuration
 
@@ -162,7 +359,7 @@ timestamp|rootdir|command
 2024-01-15T14:31:02.789Z|/home/user/myapp|git commit -m "Update feature"
 ```
 
-### Command Sanitization
+## 🔒 Security & Command Sanitization
 
 For security, Git Monitor automatically removes sensitive information:
 - Passwords in URLs: `https://user:****@github.com/repo.git`
@@ -170,39 +367,45 @@ For security, Git Monitor automatically removes sensitive information:
 - SSH keys and certificates
 - Environment variables with credentials
 
-## 🛠️ Building from Source (Optional)
+## 🛠️ Quick Start Guide
 
-If you prefer to build from source instead of using pre-built binaries:
+Once installed using any method above:
 
-### Prerequisites
-- **Rust 1.70+** with Cargo
-- **Git 2.0+** 
-
-### Build Instructions
-
+### 1. Service Management
 ```bash
-# Clone repository
-git clone https://github.com/bengreynolds/git-log-access.git
-cd git-log-access
+# Start monitoring (runs in background)
+git-monitor start
 
-# Build release binary
-cargo build --release
+# Stop monitoring
+git-monitor stop
 
-# Binary will be created at: target/release/git-monitor(.exe)
+# Check service status
+git-monitor status
+
+# Run in foreground (for testing)
+git-monitor run --verbose
 ```
 
-### System Requirements for Building
+### 2. Configuration
+Git Monitor uses a JSON configuration file created during installation:
 
-**Windows:**
-- Visual Studio Build Tools or Visual Studio Community
-- Windows SDK
+**Location:**
+- **Windows**: `%APPDATA%\git-monitor\config.json`  
+- **Linux/macOS**: `~/.config/git-monitor/config.json`
 
-**Linux:**
-- gcc or clang compiler
-- libc development headers
+**Key Settings:**
+- `logPath` - Where to write git command logs
+- `deviceNickname` - Identifier for this device in logs  
+- `maxSizeMb` - Log rotation trigger
+- `enabledShells` - Which shells to monitor
 
-**macOS:**  
-- Xcode Command Line Tools
+*See Configuration Details section below for complete options.*
+
+### 3. Understanding Logs
+
+See the **Security & Command Sanitization** section above for log format details and examples.
+
+**Log Location:** Check your configuration file or installation output for the exact path.
 ## 🚨 Troubleshooting
 
 ### Common Issues
@@ -272,28 +475,64 @@ git-monitor uninstall
 
 The installer shows exact locations for easy cleanup.
 
-## 📝 Development
+## 📝 Development & Contributing
 
 **For contributors wanting to modify the source code:**
 
-### Building from Source
+### Development Setup
 ```bash
-git clone https://github.com/bengreynolds/git-log-access.git
+# Fork the repository on GitHub, then:
+git clone https://github.com/YOUR-USERNAME/git-log-access.git
 cd git-log-access
-cargo build --release
+
+# Install Rust if needed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Build and test
+cargo build
+cargo test
+cargo run -- --help
 ```
 
-### Key Components
+### Project Structure
 - **src/main.rs**: CLI interface with service commands
 - **src/service/**: Background service and logging  
 - **src/monitor/**: Git command detection and parsing
 - **src/config/**: Configuration management
+- **scripts/**: Installation scripts for all platforms
+- **tests/**: Integration and unit tests
 
-### Testing
+### Testing & Contribution Workflow
 ```bash
-cargo test                    # Run all tests
+# Run all tests
+cargo test                    # Unit and integration tests
 cargo test -- --nocapture   # Run with output
+cargo clippy                 # Linting
+cargo fmt                   # Code formatting
+
+# Test installation scripts  
+./scripts/test-requirements.ps1  # Windows
+./scripts/test-requirements.sh   # Linux/macOS
+
+# Manual testing
+cargo run -- run --verbose      # Test the service
 ```
+
+### Contributing Guidelines
+
+1. **Fork and clone** the repository
+2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
+3. **Make your changes** with tests
+4. **Ensure all tests pass** (`cargo test`)
+5. **Run formatting** (`cargo fmt`) 
+6. **Submit a pull request**
+
+**Areas needing help:**
+- Windows service integration improvements
+- Additional shell support (fish, nushell)
+- Performance optimizations
+- Package manager distributions
+- Documentation improvements
 
 ## 📄 License & Support
 
