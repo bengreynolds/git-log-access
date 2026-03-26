@@ -216,13 +216,13 @@ fn render_hook(shell: &str, exe_path: &Path) -> Result<String> {
 
     let hook = match shell {
         "powershell" | "pwsh" => format!(
-            "function global:git {{\n    & {exe} capture --shell {shell} --cwd $PWD.Path -- @args *> $null\n    $gitApp = @(Get-Command git -All | Where-Object {{ $_.CommandType -eq 'Application' }}) | Select-Object -First 1\n    if (-not $gitApp) {{ throw 'git executable not found in PATH' }}\n    & $gitApp.Source @args\n}}"
+            "function global:git {{\n    & {exe} capture --shell {shell} --cwd $PWD.Path --parent-pid $PID -- @args *> $null\n    $gitApp = @(Get-Command git -All | Where-Object {{ $_.CommandType -eq 'Application' }}) | Select-Object -First 1\n    if (-not $gitApp) {{ throw 'git executable not found in PATH' }}\n    & $gitApp.Source @args\n}}"
         ),
         "bash" | "zsh" | "sh" => format!(
-            "git() {{\n  {exe} capture --shell {shell} --cwd \"$PWD\" -- \"$@\" >/dev/null 2>&1 || true\n  command git \"$@\"\n}}"
+            "git() {{\n  {exe} capture --shell {shell} --cwd \"$PWD\" --parent-pid $$ -- \"$@\" >/dev/null 2>&1 || true\n  command git \"$@\"\n}}"
         ),
         "fish" => format!(
-            "function git\n    {exe} capture --shell fish --cwd \"$PWD\" -- $argv >/dev/null 2>&1; or true\n    command git $argv\nend"
+            "function git\n    {exe} capture --shell fish --cwd \"$PWD\" --parent-pid $fish_pid -- $argv >/dev/null 2>&1; or true\n    command git $argv\nend"
         ),
         other => anyhow::bail!("Unsupported shell hook: {other}"),
     };

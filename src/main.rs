@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use git_log_access::{
     config::Config,
-    service::{daemon::GitMonitorDaemon, HookManager},
+    service::{daemon::GitMonitorDaemon, CommandHintStore, HookManager},
     AppResult,
 };
 use log::info;
@@ -76,6 +76,9 @@ struct CaptureArgs {
     /// Working directory of the intercepted git command
     #[arg(long)]
     cwd: Option<PathBuf>,
+    /// Parent shell PID for hint matching
+    #[arg(long)]
+    parent_pid: Option<u32>,
     /// Git arguments passed by the shell hook
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
@@ -176,8 +179,15 @@ async fn capture_command(args: CaptureArgs) -> AppResult<()> {
     let daemon = GitMonitorDaemon::new(config)?;
     let command_line = build_git_command(&args.args);
     daemon
-        .process_git_command_with_context(&command_line, args.cwd, args.shell)
-        .await
+        .process_git_command_with_context(&command_line, args.cwd.clone(), args.shell.clone())
+        .await?;
+    CommandHintStore::record_hook_command(
+        &command_line,
+        args.cwd.as_deref(),
+        args.shell.as_deref(),
+        args.parent_pid,
+    )?;
+    Ok(())
 }
 
 fn build_git_command(args: &[String]) -> String {

@@ -234,6 +234,12 @@ impl GitMonitorDaemon {
                     return Ok(());
                 }
             }
+            tokio::select! {
+                _ = sleep(Duration::from_secs(1)) => {}
+                _ = tokio::signal::ctrl_c() => {
+                    return Ok(());
+                }
+            }
         }
     }
 

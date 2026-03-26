@@ -1,5 +1,5 @@
 use crate::monitor::{extract_git_command, is_git_command, ParsedGitCommand};
-use crate::service::daemon::GitMonitorDaemon;
+use crate::service::{daemon::GitMonitorDaemon, CommandHintStore};
 use crate::utils::{format_timestamp, normalize_path, resolve_path_context};
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -12,6 +12,7 @@ const UNKNOWN_ROOT: &str = "<unknown>";
 #[derive(Debug, Clone)]
 struct ObservedProcess {
     pid: u32,
+    parent_pid: Option<u32>,
     command_line: String,
     working_dir: Option<PathBuf>,
     shell_context: String,
@@ -42,7 +43,7 @@ impl ProcessMonitor {
         let current_pids: HashSet<u32> = processes.iter().map(|process| process.pid).collect();
         self.seen.retain(|pid, _| current_pids.contains(pid));
 
-        for process in processes {
+        for mut process in processes {
             let should_log = self
                 .seen
                 .get(&process.pid)
@@ -50,6 +51,18 @@ impl ProcessMonitor {
                 .unwrap_or(true);
 
             if should_log {
+                if let Some(hint) =
+                    CommandHintStore::consume_recent(&process.command_line, process.parent_pid)?
+                {
+                    if process.working_dir.is_none() {
+                        process.working_dir = hint.working_dir_path();
+                    }
+                    if hint.logged_by_hook {
+                        self.seen.insert(process.pid, process.command_line);
+                        continue;
+                    }
+                }
+
                 daemon
                     .log_observed_process(
                         &process.command_line,
@@ -67,7 +80,7 @@ impl ProcessMonitor {
 
 #[cfg(windows)]
 fn list_git_processes() -> Result<Vec<ObservedProcess>> {
-    let command = "$procs = Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^git(\\.exe)?$' -or ($_.CommandLine -match '(^|\\\\s)(git|git\\\\.exe)(\\\\s|$)') }; if ($procs) { $procs | Select-Object ProcessId, CommandLine, ExecutablePath | ConvertTo-Json -Compress }";
+    let command = "$procs = Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^git(\\.exe)?$' -or ($_.CommandLine -match '(^|\\\\s)(git|git\\\\.exe)(\\\\s|$)') }; if ($procs) { $procs | Select-Object ProcessId, ParentProcessId, CommandLine, ExecutablePath | ConvertTo-Json -Compress }";
     let output = std::process::Command::new("powershell")
         .args(["-NoProfile", "-Command", command])
         .output()
@@ -90,6 +103,7 @@ fn list_git_processes() -> Result<Vec<ObservedProcess>> {
             let working_dir = infer_working_dir_from_command(&command_line, None);
             Some(ObservedProcess {
                 pid: row.process_id,
+                parent_pid: row.parent_process_id,
                 command_line,
                 working_dir,
                 shell_context: "process:windows".to_string(),
@@ -133,6 +147,7 @@ fn list_git_processes() -> Result<Vec<ObservedProcess>> {
             let working_dir = std::fs::read_link(process_dir.join("cwd")).ok();
             processes.push(ObservedProcess {
                 pid,
+                parent_pid: None,
                 command_line,
                 working_dir,
                 shell_context: "process:unix".to_string(),
@@ -147,6 +162,7 @@ fn list_git_processes() -> Result<Vec<ObservedProcess>> {
 #[serde(rename_all = "PascalCase")]
 struct WindowsProcessRow {
     process_id: u32,
+    parent_process_id: Option<u32>,
     command_line: Option<String>,
 }
 
