@@ -20,6 +20,11 @@ set "KEEP_EXISTING_CONFIG=false"
 echo Git Monitor Binary Installer
 echo =============================
 echo.
+echo [INFO] Package directory: %SCRIPT_DIR%
+echo [INFO] Source executable: %SCRIPT_DIR%git-monitor.exe
+echo [INFO] Install directory: %INSTALL_DIR%
+echo [INFO] Config directory: %CONFIG_DIR%
+echo.
 
 REM Check prerequisites
 echo [INFO] Checking prerequisites...
@@ -62,13 +67,24 @@ if "%EXISTING_INSTALL%"=="true" (
     if exist "%INSTALL_DIR%\git-monitor.exe" echo [WARN] Existing executable: %INSTALL_DIR%\git-monitor.exe
     if exist "%CONFIG_DIR%\config.json" echo [WARN] Existing config: %CONFIG_DIR%\config.json
     if defined COMMAND_IN_PATH echo [WARN] git-monitor command is already available in PATH
+    if defined COMMAND_IN_PATH (
+        echo [INFO] git-monitor resolves to:
+        where git-monitor
+    )
     echo [INFO] Overwriting previous installation...
 
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
       "$exe = '%INSTALL_DIR%\git-monitor.exe'; if (Test-Path $exe) { try { & $exe stop 2>$null | Out-Null } catch {}; Start-Sleep -Milliseconds 500 }; $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'git-monitor.exe' -or ($_.ExecutablePath -and $_.ExecutablePath -eq $exe) }; foreach ($proc in $procs) { try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }; for ($i = 0; $i -lt 20; $i++) { $still = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'git-monitor.exe' -or ($_.ExecutablePath -and $_.ExecutablePath -eq $exe) } | Select-Object -First 1; if (-not $still) { break }; Start-Sleep -Milliseconds 250 }" >nul 2>&1
 
     if exist "%INSTALL_DIR%" (
+        echo [INFO] Existing install directory contents before cleanup:
+        dir "%INSTALL_DIR%" /a
         rmdir /s /q "%INSTALL_DIR%" >nul 2>&1
+        if exist "%INSTALL_DIR%" (
+            echo [WARN] Install directory still exists after cleanup attempt: %INSTALL_DIR%
+        ) else (
+            echo [INFO] Existing install directory removed
+        )
     )
 )
 
@@ -76,12 +92,16 @@ REM Create installation directory
 echo.
 echo [INFO] Installing Git Monitor executable...
 mkdir "%INSTALL_DIR%" 2>nul
+if exist "%INSTALL_DIR%" (
+    echo [INFO] Install directory is present: %INSTALL_DIR%
+) else (
+    echo [WARN] Install directory could not be created: %INSTALL_DIR%
+)
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$source = '%SCRIPT_DIR%git-monitor.exe'; $destination = '%INSTALL_DIR%\git-monitor.exe'; $copied = $false; for ($i = 0; $i -lt 20; $i++) { try { Copy-Item -LiteralPath $source -Destination $destination -Force -ErrorAction Stop; $copied = $true; break } catch { $message = $_.Exception.Message; Start-Sleep -Milliseconds 500 } }; if (-not $copied) { Write-Output $message; exit 1 }" > "%TEMP%\git-monitor-install-copy-error.txt" 2>&1
+  "$source = '%SCRIPT_DIR%git-monitor.exe'; $destination = '%INSTALL_DIR%\git-monitor.exe'; Write-Output ('[INFO] Copy source: ' + $source); Write-Output ('[INFO] Copy destination: ' + $destination); Write-Output ('[INFO] Source exists: ' + (Test-Path $source)); Write-Output ('[INFO] Destination parent exists: ' + (Test-Path (Split-Path -Parent $destination))); $copied = $false; for ($i = 0; $i -lt 20; $i++) { try { Copy-Item -LiteralPath $source -Destination $destination -Force -ErrorAction Stop; Write-Output ('[INFO] Copy succeeded on attempt ' + ($i + 1)); $copied = $true; break } catch { $message = $_.Exception.Message; Write-Output ('[WARN] Copy attempt ' + ($i + 1) + ' failed: ' + $message); Start-Sleep -Milliseconds 500 } }; if (-not $copied) { if (Test-Path (Split-Path -Parent $destination)) { Write-Output '[INFO] Destination parent details:'; Get-Item (Split-Path -Parent $destination) | Format-List FullName,Attributes,Mode | Out-String | Write-Output; Get-ChildItem -Force (Split-Path -Parent $destination) | Select-Object FullName,Length,Mode | Format-Table -AutoSize | Out-String | Write-Output }; Write-Output ('[ERROR] Final copy failure: ' + $message); exit 1 }" > "%TEMP%\git-monitor-install-copy-error.txt" 2>&1
 if errorlevel 1 (
     echo [ERROR] Failed to copy executable
-    set /p "COPY_ERROR_DETAIL="<"%TEMP%\git-monitor-install-copy-error.txt"
-    if defined COPY_ERROR_DETAIL echo [ERROR] !COPY_ERROR_DETAIL!
+    type "%TEMP%\git-monitor-install-copy-error.txt"
     if exist "%INSTALL_DIR%\git-monitor.exe" echo [WARN] Target executable still exists: %INSTALL_DIR%\git-monitor.exe
     pause
     exit /b 1

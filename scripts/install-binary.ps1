@@ -33,6 +33,10 @@ function Write-ErrorMsg($Message) {
     Write-Host "[ERROR] $Message" -ForegroundColor $Colors.Red
 }
 
+function Write-DebugInfo($Message) {
+    Write-Host "[DEBUG] $Message" -ForegroundColor DarkGray
+}
+
 function Get-ExePath {
     return Join-Path $InstallDir "git-monitor.exe"
 }
@@ -157,6 +161,10 @@ function Stop-ExistingMonitorProcesses {
 
 function Test-Prerequisites {
     Write-Info "Checking prerequisites..."
+    Write-DebugInfo "Package directory: $PSScriptRoot"
+    Write-DebugInfo "Source executable: $(Get-ScriptAssetPath 'git-monitor.exe')"
+    Write-DebugInfo "Install directory: $InstallDir"
+    Write-DebugInfo "Config directory: $ConfigDir"
 
     try {
         $null = git --version
@@ -184,23 +192,38 @@ function Install-Executable {
 
     try {
         $sourceExePath = Get-ScriptAssetPath "git-monitor.exe"
+        $targetExePath = Get-ExePath
+        Write-DebugInfo "Copy source: $sourceExePath"
+        Write-DebugInfo "Copy destination: $targetExePath"
         Stop-ExistingMonitorProcesses
 
         if (Test-Path $InstallDir) {
             Write-Info "Preparing installation directory..."
+            Write-DebugInfo "Existing install directory contents:"
+            Get-ChildItem -Force $InstallDir -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-DebugInfo "  $($_.FullName)"
+            }
             Remove-Item -Path $InstallDir -Recurse -Force
+            if (Test-Path $InstallDir) {
+                Write-Warning "Install directory still exists after cleanup attempt: $InstallDir"
+            } else {
+                Write-DebugInfo "Existing install directory removed"
+            }
         }
 
         New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
+        Write-DebugInfo "Install directory present: $(Test-Path $InstallDir)"
         $copied = $false
         $lastCopyError = $null
         for ($attempt = 0; $attempt -lt 20; $attempt++) {
             try {
-                Copy-Item -LiteralPath $sourceExePath -Destination (Get-ExePath) -Force -ErrorAction Stop
+                Copy-Item -LiteralPath $sourceExePath -Destination $targetExePath -Force -ErrorAction Stop
+                Write-DebugInfo "Copy succeeded on attempt $($attempt + 1)"
                 $copied = $true
                 break
             } catch {
                 $lastCopyError = $_.Exception.Message
+                Write-DebugInfo "Copy attempt $($attempt + 1) failed: $lastCopyError"
                 Start-Sleep -Milliseconds 500
             }
         }
@@ -250,6 +273,8 @@ function Install-Executable {
     } catch {
         Write-ErrorMsg "Failed to install executable: $($_.Exception.Message)"
         $targetExePath = Get-ExePath
+        Write-DebugInfo "Source exists: $(Test-Path (Get-ScriptAssetPath 'git-monitor.exe'))"
+        Write-DebugInfo "Destination parent exists: $(Test-Path $InstallDir)"
         if (Test-Path $targetExePath) {
             Write-Warning "Target executable still exists at $targetExePath"
         }
