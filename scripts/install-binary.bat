@@ -14,6 +14,7 @@ set "CONFIG_DIR=%APPDATA%\git-monitor"
 REM Check for silent installation
 set "SILENT_INSTALL=false"
 if /i "%1"=="SILENT" set "SILENT_INSTALL=true"
+set "KEEP_EXISTING_CONFIG=false"
 
 echo Git Monitor Binary Installer
 echo =============================
@@ -120,15 +121,30 @@ if errorlevel 1 (
 )
 
 REM Configuration setup
+set "DEFAULT_NICKNAME=%COMPUTERNAME%"
+if not defined DEFAULT_NICKNAME set "DEFAULT_NICKNAME=my-computer"
+set "DEFAULT_LOG_DIR=%USERPROFILE%\.local\share\git-monitor"
+set "DEFAULT_MAX_SIZE_MB=100"
+set "EXISTING_CONFIG_PATH=%CONFIG_DIR%\config.json"
+
+if exist "%EXISTING_CONFIG_PATH%" (
+    for /f "usebackq delims=" %%A in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$cfg = Get-Content -LiteralPath '%EXISTING_CONFIG_PATH%' -Raw | ConvertFrom-Json; $device = if ([string]::IsNullOrWhiteSpace($cfg.deviceNickname)) { $env:COMPUTERNAME } else { $cfg.deviceNickname }; if ([string]::IsNullOrWhiteSpace($device)) { $device = 'my-computer' }; Write-Output $device" 2^>nul`) do set "DEFAULT_NICKNAME=%%A"
+    for /f "usebackq delims=" %%A in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$cfg = Get-Content -LiteralPath '%EXISTING_CONFIG_PATH%' -Raw | ConvertFrom-Json; $logDir = Split-Path -Path $cfg.logPath -Parent; if ([string]::IsNullOrWhiteSpace($logDir)) { $logDir = Join-Path $env:USERPROFILE '.local\share\git-monitor' }; Write-Output $logDir" 2^>nul`) do set "DEFAULT_LOG_DIR=%%A"
+    for /f "usebackq delims=" %%A in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$cfg = Get-Content -LiteralPath '%EXISTING_CONFIG_PATH%' -Raw | ConvertFrom-Json; $maxSize = if ($cfg.logRotation -and $cfg.logRotation.maxSizeMb) { [int]$cfg.logRotation.maxSizeMb } else { 100 }; Write-Output $maxSize" 2^>nul`) do set "DEFAULT_MAX_SIZE_MB=%%A"
+)
+
 if "%SILENT_INSTALL%"=="true" (
-    echo [INFO] Silent installation - using defaults...
-    
-    REM Use defaults for silent install
-    set "DEVICE_NICKNAME=%COMPUTERNAME%"
-    if not defined DEVICE_NICKNAME set "DEVICE_NICKNAME=my-computer"
-    set "USER_LOG_DIR=%USERPROFILE%\.local\share\git-monitor"
-    set "MAX_SIZE_MB=100"
-    
+    if exist "%EXISTING_CONFIG_PATH%" (
+        echo [INFO] Silent installation - keeping existing configuration...
+        set "KEEP_EXISTING_CONFIG=true"
+    ) else (
+        echo [INFO] Silent installation - using defaults...
+    )
+
+    set "DEVICE_NICKNAME=%DEFAULT_NICKNAME%"
+    set "USER_LOG_DIR=%DEFAULT_LOG_DIR%"
+    set "MAX_SIZE_MB=%DEFAULT_MAX_SIZE_MB%"
+
     echo [INFO] Device nickname: %DEVICE_NICKNAME%
     echo [INFO] Log directory: %USER_LOG_DIR%
 ) else (
@@ -138,74 +154,104 @@ if "%SILENT_INSTALL%"=="true" (
     echo Please provide your preferences for Git Monitor setup
     echo.
 
-    REM Device nickname
-    set "DEFAULT_NICKNAME=%COMPUTERNAME%"
-    if not defined DEFAULT_NICKNAME set "DEFAULT_NICKNAME=my-computer"
-    set /p "DEVICE_NICKNAME=Device nickname [!DEFAULT_NICKNAME!]: "
-    if not defined DEVICE_NICKNAME set "DEVICE_NICKNAME=!DEFAULT_NICKNAME!"
+    if exist "%EXISTING_CONFIG_PATH%" (
+        echo Existing configuration detected:
+        echo   Device Nickname: !DEFAULT_NICKNAME!
+        echo   Log Directory: !DEFAULT_LOG_DIR!
+        echo   Max Log Size: !DEFAULT_MAX_SIZE_MB!MB
+        echo.
+        set /p "KEEP_CONFIG_RESPONSE=Keep existing configuration? [Y/n]: "
+        if /i not "!KEEP_CONFIG_RESPONSE!"=="n" if /i not "!KEEP_CONFIG_RESPONSE!"=="no" (
+            set "KEEP_EXISTING_CONFIG=true"
+        )
+    )
 
-    REM Log directory  
-    set "DEFAULT_LOG_DIR=%USERPROFILE%\.local\share\git-monitor"
-    echo.
-    echo Log Directory:
-    echo   Where git command logs will be stored
-    set /p "USER_LOG_DIR=Log directory [!DEFAULT_LOG_DIR!]: "
-    if not defined USER_LOG_DIR set "USER_LOG_DIR=!DEFAULT_LOG_DIR!"
+    set "DEVICE_NICKNAME=!DEFAULT_NICKNAME!"
+    set "USER_LOG_DIR=!DEFAULT_LOG_DIR!"
+    set "MAX_SIZE_MB=!DEFAULT_MAX_SIZE_MB!"
 
-    REM Log rotation
-    echo.
-    echo Log Rotation:
-    echo   Automatically rotate logs when they get too large
-    set /p "MAX_SIZE_MB=Maximum log file size in MB [100]: "
-    if not defined MAX_SIZE_MB set "MAX_SIZE_MB=100"
+    if "!KEEP_EXISTING_CONFIG!"=="true" (
+        echo [INFO] Keeping existing configuration values.
+    ) else (
+        REM Device nickname
+        set /p "DEVICE_NICKNAME=Device nickname [!DEFAULT_NICKNAME!]: "
+        if not defined DEVICE_NICKNAME set "DEVICE_NICKNAME=!DEFAULT_NICKNAME!"
 
-    REM Confirmation
-    echo.
-    echo === Configuration Summary ===
-    echo Device Nickname: !DEVICE_NICKNAME!
-    echo Log Directory: !USER_LOG_DIR!
-    echo Log File: !USER_LOG_DIR!\!DEVICE_NICKNAME!_githistory.log
-    echo Max Log Size: !MAX_SIZE_MB!MB
-    echo.
-    set /p "CONFIRM=Continue with this configuration? [Y/n]: "
-    if /i "!CONFIRM!"=="n" (
-        echo Configuration cancelled by user
-        pause
-        exit /b 1
+        REM Log directory
+        echo.
+        echo Log Directory:
+        echo   Where git command logs will be stored
+        set /p "USER_LOG_DIR=Log directory [!DEFAULT_LOG_DIR!]: "
+        if not defined USER_LOG_DIR set "USER_LOG_DIR=!DEFAULT_LOG_DIR!"
+
+        REM Log rotation
+        echo.
+        echo Log Rotation:
+        echo   Automatically rotate logs when they get too large
+        set /p "MAX_SIZE_MB=Maximum log file size in MB [!DEFAULT_MAX_SIZE_MB!]: "
+        if not defined MAX_SIZE_MB set "MAX_SIZE_MB=!DEFAULT_MAX_SIZE_MB!"
+
+        REM Confirmation
+        echo.
+        echo === Configuration Summary ===
+        echo Device Nickname: !DEVICE_NICKNAME!
+        echo Log Directory: !USER_LOG_DIR!
+        echo Log File: !USER_LOG_DIR!\!DEVICE_NICKNAME!_githistory.log
+        echo Max Log Size: !MAX_SIZE_MB!MB
+        echo.
+        set /p "CONFIRM=Continue with this configuration? [Y/n]: "
+        if /i "!CONFIRM!"=="n" (
+            echo Configuration cancelled by user
+            pause
+            exit /b 1
+        )
     )
 )
 
-REM Create directories
-mkdir "%CONFIG_DIR%" 2>nul
-mkdir "%USER_LOG_DIR%" 2>nul
-
-REM Create configuration
-echo.
-echo [INFO] Creating configuration...
-
-REM Create basic config file
 set "CONFIG_PATH=%CONFIG_DIR%\config.json"
 set "LOG_FILE_PATH=%USER_LOG_DIR%\%DEVICE_NICKNAME%_githistory.log"
-(
-    echo {
-    echo   "logPath": "%LOG_FILE_PATH:\=\\%",
-    echo   "deviceNickname": "%DEVICE_NICKNAME%",
-    echo   "enabledShells": ["powershell", "pwsh"],
-    echo   "monitorScope": "user",
-    echo   "logRotation": {
-    echo     "enabled": true,
-    echo     "maxSizeMb": %MAX_SIZE_MB%,
-    echo     "keepFiles": 10
-    echo   },
-    echo   "performance": {
-    echo     "maxMemoryMb": 10,
-    echo     "logBufferSize": 1000,
-    echo     "flushIntervalSeconds": 30
-    echo   }
-    echo }
-) > "%CONFIG_PATH%"
-echo [SUCCESS] Created configuration at %CONFIG_PATH%
-echo [SUCCESS] Log will be written to: %LOG_FILE_PATH%
+
+echo.
+if "%KEEP_EXISTING_CONFIG%"=="true" (
+    echo [INFO] Keeping existing configuration...
+    echo [SUCCESS] Using existing configuration at %CONFIG_PATH%
+) else (
+    REM Create directories
+    mkdir "%CONFIG_DIR%" 2>nul
+    mkdir "%USER_LOG_DIR%" 2>nul
+
+    if exist "%CONFIG_PATH%" (
+        for /f "usebackq delims=" %%A in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $backup = Join-Path '%CONFIG_DIR%' ('config.' + $timestamp + '.backup.json'); Copy-Item -LiteralPath '%CONFIG_PATH%' -Destination $backup -Force; Write-Output $backup" 2^>nul`) do set "CONFIG_BACKUP_PATH=%%A"
+        if defined CONFIG_BACKUP_PATH (
+            echo [SUCCESS] Backed up existing configuration to !CONFIG_BACKUP_PATH!
+        ) else (
+            echo [WARN] Existing configuration was detected but backup creation failed
+        )
+    )
+
+    REM Create configuration
+    echo [INFO] Creating configuration...
+    (
+        echo {
+        echo   "logPath": "%LOG_FILE_PATH:\=\\%",
+        echo   "deviceNickname": "%DEVICE_NICKNAME%",
+        echo   "enabledShells": ["powershell", "pwsh"],
+        echo   "monitorScope": "user",
+        echo   "logRotation": {
+        echo     "enabled": true,
+        echo     "maxSizeMb": %MAX_SIZE_MB%,
+        echo     "keepFiles": 10
+        echo   },
+        echo   "performance": {
+        echo     "maxMemoryMb": 10,
+        echo     "logBufferSize": 1000,
+        echo     "flushIntervalSeconds": 30
+        echo   }
+        echo }
+    ) > "%CONFIG_PATH%"
+    echo [SUCCESS] Created configuration at %CONFIG_PATH%
+    echo [SUCCESS] Log will be written to: %LOG_FILE_PATH%
+)
 
 REM Test installation
 echo.
@@ -233,6 +279,11 @@ if errorlevel 124 (
     echo [SUCCESS] Monitoring enabled
     echo [INFO] Open a new PowerShell or pwsh window to load the installed profile hook
 )
+
+echo.
+echo [INFO] Running post-install self-check...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$exe = '%INSTALL_DIR%\git-monitor.exe'; $cfgPath = '%CONFIG_PATH%'; if (-not (Test-Path $cfgPath)) { Write-Output '[WARN] Self-check skipped because config.json was not found'; exit 0 }; Write-Output '  Status:'; & $exe status 2>&1 | ForEach-Object { Write-Output ('    ' + $_) }; $logPath = try { (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).logPath } catch { $null }; $tempRepo = Join-Path ([System.IO.Path]::GetTempPath()) ('git-monitor-install-check-' + [guid]::NewGuid().ToString('N')); New-Item -Path $tempRepo -ItemType Directory -Force | Out-Null; try { git init --quiet $tempRepo | Out-Null; & $exe capture --config $cfgPath --shell powershell --cwd $tempRepo --parent-pid $PID -- status 2>$null | Out-Null; Start-Sleep -Milliseconds 250 } finally { Remove-Item -LiteralPath $tempRepo -Recurse -Force -ErrorAction SilentlyContinue }; if ($logPath) { Write-Output ('  Detected log path: ' + $logPath); if (Test-Path $logPath) { $latest = Get-Content -LiteralPath $logPath | Select-Object -Last 1; if ($latest) { Write-Output ('  Latest log entry: ' + $latest) } else { Write-Output '[WARN] Log file exists but no entries were found after self-check' } } else { Write-Output '[WARN] Log file was not created during self-check' } } else { Write-Output '[WARN] Could not determine configured log path for self-check' }"
 
 echo.
 echo Git Monitor installation is complete!

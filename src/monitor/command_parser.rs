@@ -1,5 +1,9 @@
 use crate::monitor::git_detector::{extract_git_command, is_git_command, should_log_command};
 use crate::utils::{find_git_root, format_timestamp, normalize_path, resolve_path_context};
+use crate::{
+    LEGACY_LOG_FORMAT_SEPARATOR, LOG_COMMAND_PREFIX, LOG_FORMAT_SEPARATOR, LOG_REPO_PREFIX,
+    LOG_TIMESTAMP_PREFIX,
+};
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
@@ -19,14 +23,51 @@ pub struct ParsedGitCommand {
 }
 
 impl ParsedGitCommand {
-    /// Format as log entry: timestamp|rootdir|command
+    /// Format as log entry: timestamp=... :: repo=... :: command=...
     pub fn to_log_entry(&self) -> String {
-        format!("{}|{}|{}", self.timestamp, self.root_dir, self.command)
+        format!(
+            "{LOG_TIMESTAMP_PREFIX}{}{LOG_FORMAT_SEPARATOR}{LOG_REPO_PREFIX}{}{LOG_FORMAT_SEPARATOR}{LOG_COMMAND_PREFIX}{}",
+            self.timestamp, self.root_dir, self.command
+        )
     }
 
     /// Parse log entry back to ParsedGitCommand
     pub fn from_log_entry(log_line: &str) -> Result<Self> {
-        let parts: Vec<&str> = log_line.splitn(3, '|').collect();
+        if let Ok(parsed) = Self::parse_labeled_log_entry(log_line) {
+            return Ok(parsed);
+        }
+
+        Self::parse_legacy_log_entry(log_line)
+    }
+
+    fn parse_labeled_log_entry(log_line: &str) -> Result<Self> {
+        let parts: Vec<&str> = log_line.splitn(3, LOG_FORMAT_SEPARATOR).collect();
+
+        if parts.len() != 3 {
+            anyhow::bail!("Invalid labeled log entry format: {}", log_line);
+        }
+
+        let timestamp = parts[0]
+            .strip_prefix(LOG_TIMESTAMP_PREFIX)
+            .context("Missing timestamp field")?;
+        let root_dir = parts[1]
+            .strip_prefix(LOG_REPO_PREFIX)
+            .context("Missing repo field")?;
+        let command = parts[2]
+            .strip_prefix(LOG_COMMAND_PREFIX)
+            .context("Missing command field")?;
+
+        Ok(ParsedGitCommand {
+            timestamp: timestamp.to_string(),
+            root_dir: root_dir.to_string(),
+            command: command.to_string(),
+            working_dir: None,
+            shell_context: None,
+        })
+    }
+
+    fn parse_legacy_log_entry(log_line: &str) -> Result<Self> {
+        let parts: Vec<&str> = log_line.splitn(3, LEGACY_LOG_FORMAT_SEPARATOR).collect();
 
         if parts.len() != 3 {
             anyhow::bail!("Invalid log entry format: {}", log_line);
@@ -260,13 +301,23 @@ mod tests {
         let log_entry = parsed.to_log_entry();
         assert_eq!(
             log_entry,
-            "2026-03-26 14:32:15|/home/user/project|git commit -m 'test'"
+            "timestamp=2026-03-26 14:32:15 :: repo=/home/user/project :: command=git commit -m 'test'"
         );
 
         let parsed_back = ParsedGitCommand::from_log_entry(&log_entry).unwrap();
         assert_eq!(parsed_back.timestamp, parsed.timestamp);
         assert_eq!(parsed_back.root_dir, parsed.root_dir);
         assert_eq!(parsed_back.command, parsed.command);
+    }
+
+    #[test]
+    fn test_legacy_log_format_still_parses() {
+        let parsed =
+            ParsedGitCommand::from_log_entry("2026-03-26 14:32:15|/home/user/project|git status")
+                .unwrap();
+        assert_eq!(parsed.timestamp, "2026-03-26 14:32:15");
+        assert_eq!(parsed.root_dir, "/home/user/project");
+        assert_eq!(parsed.command, "git status");
     }
 
     #[test]

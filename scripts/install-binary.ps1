@@ -37,6 +37,76 @@ function Get-ExePath {
     return Join-Path $InstallDir "git-monitor.exe"
 }
 
+function Get-ExistingConfiguration {
+    $configPath = Join-Path $ConfigDir "config.json"
+    if (!(Test-Path $configPath)) {
+        return $null
+    }
+
+    try {
+        $rawConfig = Get-Content $configPath -Raw | ConvertFrom-Json
+        $deviceNickname = $rawConfig.deviceNickname
+        if ([string]::IsNullOrWhiteSpace($deviceNickname)) {
+            $deviceNickname = $env:COMPUTERNAME
+        }
+        if ([string]::IsNullOrWhiteSpace($deviceNickname)) {
+            $deviceNickname = "my-computer"
+        }
+
+        $logPath = $rawConfig.logPath
+        $logDir = $null
+        if (![string]::IsNullOrWhiteSpace($logPath)) {
+            $logDir = Split-Path -Path $logPath -Parent
+        }
+        if ([string]::IsNullOrWhiteSpace($logDir)) {
+            $logDir = "$env:USERPROFILE\.local\share\git-monitor"
+        }
+
+        $maxSizeMb = 100
+        if ($rawConfig.logRotation -and $rawConfig.logRotation.maxSizeMb) {
+            $maxSizeMb = [int]$rawConfig.logRotation.maxSizeMb
+        }
+
+        return @{
+            DeviceNickname = $deviceNickname
+            LogDir = $logDir
+            MaxSizeMb = $maxSizeMb
+            ConfigPath = $configPath
+        }
+    } catch {
+        Write-Warning "Existing configuration could not be read. Defaults will be used."
+        return $null
+    }
+}
+
+function Backup-ExistingConfiguration {
+    param(
+        [string]$ConfigPath
+    )
+
+    if (!(Test-Path $ConfigPath)) {
+        return $null
+    }
+
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $backupPath = Join-Path (Split-Path -Path $ConfigPath -Parent) "config.$timestamp.backup.json"
+    Copy-Item -Path $ConfigPath -Destination $backupPath -Force
+    return $backupPath
+}
+
+function Get-ConfiguredLogPath {
+    $configPath = Join-Path $ConfigDir "config.json"
+    if (!(Test-Path $configPath)) {
+        return $null
+    }
+
+    try {
+        return (Get-Content $configPath -Raw | ConvertFrom-Json).logPath
+    } catch {
+        return $null
+    }
+}
+
 function Test-Prerequisites {
     Write-Info "Checking prerequisites..."
 
@@ -116,7 +186,18 @@ function Install-Executable {
 }
 
 function Get-UserConfiguration {
+    $existingConfig = Get-ExistingConfiguration
+
     if ($Silent) {
+        if ($existingConfig) {
+            return @{
+                DeviceNickname = $existingConfig.DeviceNickname
+                LogDir = $existingConfig.LogDir
+                MaxSizeMb = $existingConfig.MaxSizeMb
+                KeepExisting = $true
+            }
+        }
+
         $defaultNickname = $env:COMPUTERNAME
         if (!$defaultNickname) { $defaultNickname = "my-computer" }
 
@@ -124,6 +205,7 @@ function Get-UserConfiguration {
             DeviceNickname = $defaultNickname
             LogDir = "$env:USERPROFILE\.local\share\git-monitor"
             MaxSizeMb = 100
+            KeepExisting = $false
         }
     }
 
@@ -134,6 +216,30 @@ function Get-UserConfiguration {
 
     $defaultNickname = $env:COMPUTERNAME
     if (!$defaultNickname) { $defaultNickname = "my-computer" }
+    $defaultLogDir = "$env:USERPROFILE\.local\share\git-monitor"
+    $defaultMaxSizeMb = 100
+
+    if ($existingConfig) {
+        Write-Host "Existing configuration detected:" -ForegroundColor $Colors.Blue
+        Write-Host "  Device Nickname: $($existingConfig.DeviceNickname)" -ForegroundColor White
+        Write-Host "  Log Directory: $($existingConfig.LogDir)" -ForegroundColor White
+        Write-Host "  Max Log Size: $($existingConfig.MaxSizeMb)MB" -ForegroundColor White
+        Write-Host ""
+
+        $keepExisting = Read-Host "Keep the existing configuration? [Y/n]"
+        if ($keepExisting -notin @("n", "N", "no", "NO", "No")) {
+            return @{
+                DeviceNickname = $existingConfig.DeviceNickname
+                LogDir = $existingConfig.LogDir
+                MaxSizeMb = $existingConfig.MaxSizeMb
+                KeepExisting = $true
+            }
+        }
+
+        $defaultNickname = $existingConfig.DeviceNickname
+        $defaultLogDir = $existingConfig.LogDir
+        $defaultMaxSizeMb = $existingConfig.MaxSizeMb
+    }
 
     Write-Host "Device Nickname:" -ForegroundColor $Colors.Blue
     Write-Host "  This identifies your device in log entries" -ForegroundColor Gray
@@ -142,7 +248,6 @@ function Get-UserConfiguration {
         $deviceNickname = $defaultNickname
     }
 
-    $defaultLogDir = "$env:USERPROFILE\.local\share\git-monitor"
     Write-Host ""
     Write-Host "Log Directory:" -ForegroundColor $Colors.Blue
     Write-Host "  Where git command logs will be stored" -ForegroundColor Gray
@@ -159,9 +264,9 @@ function Get-UserConfiguration {
     Write-Host ""
     Write-Host "Log Rotation:" -ForegroundColor $Colors.Blue
     Write-Host "  Automatically rotate logs when they get too large" -ForegroundColor Gray
-    $maxSizeMb = Read-Host "Maximum log file size in MB [100]"
+    $maxSizeMb = Read-Host "Maximum log file size in MB [$defaultMaxSizeMb]"
     if ([string]::IsNullOrWhiteSpace($maxSizeMb) -or !($maxSizeMb -match '^\d+$')) {
-        $maxSizeMb = 100
+        $maxSizeMb = $defaultMaxSizeMb
     } else {
         $maxSizeMb = [int]$maxSizeMb
     }
@@ -184,6 +289,7 @@ function Get-UserConfiguration {
         DeviceNickname = $deviceNickname
         LogDir = $logDir
         MaxSizeMb = $maxSizeMb
+        KeepExisting = $false
     }
 }
 
@@ -196,11 +302,22 @@ function New-Config {
             return $false
         }
 
+        if ($config.KeepExisting) {
+            $configPath = Join-Path $ConfigDir "config.json"
+            Write-Success "Keeping existing configuration at $configPath"
+            Write-Success "Log will continue to be written to: $(Join-Path $config.LogDir "$($config.DeviceNickname)_githistory.log")"
+            return $true
+        }
+
         New-Item -Path $ConfigDir -ItemType Directory -Force | Out-Null
         New-Item -Path $config.LogDir -ItemType Directory -Force | Out-Null
 
         $configPath = Join-Path $ConfigDir "config.json"
         $logFile = Join-Path $config.LogDir "$($config.DeviceNickname)_githistory.log"
+        $backupPath = Backup-ExistingConfiguration -ConfigPath $configPath
+        if ($backupPath) {
+            Write-Success "Backed up existing configuration to $backupPath"
+        }
 
         $userConfig = @{
             logPath = $logFile
@@ -284,6 +401,55 @@ function Enable-Monitoring {
     } catch {
         Write-Warning "Automatic activation failed: $($_.Exception.Message)"
         Write-Info "You can enable it later with: git-monitor start"
+    }
+
+    return $true
+}
+
+function Invoke-PostInstallSelfCheck {
+    if ($NoService) {
+        Write-Info "Skipping post-install self-check (--NoService specified)"
+        return $true
+    }
+
+    Write-Info "Running post-install self-check..."
+
+    try {
+        $exePath = Get-ExePath
+        $configPath = Join-Path $ConfigDir "config.json"
+        $logPath = Get-ConfiguredLogPath
+
+        Write-Host "  Status:" -ForegroundColor White
+        & $exePath status 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor Gray }
+
+        $tempRepo = Join-Path ([System.IO.Path]::GetTempPath()) "git-monitor-install-check-$PID"
+        New-Item -Path $tempRepo -ItemType Directory -Force | Out-Null
+
+        try {
+            git init --quiet $tempRepo | Out-Null
+            & $exePath capture --config $configPath --shell powershell --cwd $tempRepo --parent-pid $PID -- status 2>$null
+            Start-Sleep -Milliseconds 250
+        } finally {
+            Remove-Item -Path $tempRepo -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        if ($logPath) {
+            Write-Host "  Detected log path: $logPath" -ForegroundColor White
+            if (Test-Path $logPath) {
+                $latestEntry = Get-Content $logPath | Select-Object -Last 1
+                if ($latestEntry) {
+                    Write-Host "  Latest log entry: $latestEntry" -ForegroundColor White
+                } else {
+                    Write-Warning "Log file exists but no entries were found after self-check"
+                }
+            } else {
+                Write-Warning "Log file was not created during self-check"
+            }
+        } else {
+            Write-Warning "Could not determine configured log path for self-check"
+        }
+    } catch {
+        Write-Warning "Post-install self-check failed: $($_.Exception.Message)"
     }
 
     return $true
@@ -437,6 +603,7 @@ function Main {
     }
 
     Enable-Monitoring | Out-Null
+    Invoke-PostInstallSelfCheck | Out-Null
     Show-CompletionMessage
 }
 

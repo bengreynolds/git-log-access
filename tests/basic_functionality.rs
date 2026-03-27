@@ -1,4 +1,5 @@
 use git_log_access::config::Config;
+use git_log_access::monitor::ParsedGitCommand;
 use git_log_access::service::GitMonitorDaemon;
 use std::fs;
 use std::path::PathBuf;
@@ -35,11 +36,10 @@ async fn test_daemon_logs_real_processed_command() {
 
     let content = fs::read_to_string(log_dir.path().join("integration_test.log")).unwrap();
     let line = content.lines().next().unwrap();
-    let parts: Vec<&str> = line.split('|').collect();
-    assert_eq!(parts.len(), 3);
-    assert!(parts[0].contains('-'));
-    assert!(parts[0].contains(':'));
-    assert!(parts[2].starts_with("git"));
+    let parsed = ParsedGitCommand::from_log_entry(line).unwrap();
+    assert!(parsed.timestamp.contains('-'));
+    assert!(parsed.timestamp.contains(':'));
+    assert!(parsed.command.starts_with("git"));
 }
 
 #[tokio::test]

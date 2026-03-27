@@ -1,6 +1,6 @@
 # Git Command Monitor
 
-A Rust git command monitor that now intercepts real git invocations through per-user shell hooks and writes `timestamp|rootdir|command` log entries with repository context.
+A Rust git command monitor that now intercepts real git invocations through per-user shell hooks and writes `timestamp=... :: repo=... :: command=...` log entries with repository context.
 
 ## Current Status
 
@@ -15,7 +15,7 @@ Current scope:
 
 - **Cross-platform codebase**: Windows, Linux, macOS (including Apple Silicon)
 - **Real interception**: Supported shells call back into `git-monitor capture`
-- **Structured logging**: Format `timestamp|rootdir|command`
+- **Structured logging**: Format `timestamp=... :: repo=... :: command=...`
 - **Command sanitization hooks**: Masks a limited set of sensitive arguments
 - **Log rotation**: Configurable file size limits and retention
 - **Security focused**: Local-only operation, no network transmission
@@ -354,14 +354,14 @@ git-monitor run --verbose
 
 Each git command creates a log entry in the format:
 ```
-timestamp|rootdir|command
+timestamp=2024-01-15T14:30:25.123Z :: repo=/path/to/repo :: command=git status
 ```
 
 **Example Log Entries:**
 ```
-2024-01-15T14:30:25.123Z|C:\Users\user\project|git status
-2024-01-15T14:30:45.456Z|/home/user/myapp|git add .
-2024-01-15T14:31:02.789Z|/home/user/myapp|git commit -m "Update feature"
+timestamp=2024-01-15T14:30:25.123Z :: repo=C:\Users\user\project :: command=git status
+timestamp=2024-01-15T14:30:45.456Z :: repo=/home/user/myapp :: command=git add .
+timestamp=2024-01-15T14:31:02.789Z :: repo=/home/user/myapp :: command=git commit -m "Update feature"
 ```
 
 ## 🔒 Security & Command Sanitization
@@ -562,7 +562,7 @@ cargo run -- run --verbose      # Test hook installation flow
 - ✅ One-command installation across all platforms
 - ✅ Hook-based shell interception
 - ✅ Command sanitization and security features
-- ✅ Structured logging with timestamp|rootdir|command format
+- ✅ Structured logging with labeled single-line log format
 - ✅ Log rotation and performance optimization
 - ✅ Comprehensive testing and documentation
 
