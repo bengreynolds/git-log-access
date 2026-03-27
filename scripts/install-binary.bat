@@ -8,6 +8,7 @@ REM   install.bat SILENT    - Silent installation with default settings
 
 setlocal enabledelayedexpansion
 
+set "SCRIPT_DIR=%~dp0"
 set "INSTALL_DIR=%LOCALAPPDATA%\Programs\GitMonitor"
 set "CONFIG_DIR=%APPDATA%\git-monitor"
 
@@ -38,7 +39,7 @@ if errorlevel 1 (
 echo [SUCCESS] Git found
 
 REM Check for executable
-if not exist "git-monitor.exe" (
+if not exist "%SCRIPT_DIR%git-monitor.exe" (
     echo [ERROR] git-monitor.exe not found in current directory
     echo Please ensure you've extracted the binary distribution correctly
     echo.
@@ -76,7 +77,7 @@ echo.
 echo [INFO] Installing Git Monitor executable...
 mkdir "%INSTALL_DIR%" 2>nul
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$source = Join-Path (Get-Location) 'git-monitor.exe'; $destination = '%INSTALL_DIR%\git-monitor.exe'; try { Copy-Item -LiteralPath $source -Destination $destination -Force -ErrorAction Stop } catch { Write-Output $_.Exception.Message; exit 1 }" > "%TEMP%\git-monitor-install-copy-error.txt" 2>&1
+  "$source = '%SCRIPT_DIR%git-monitor.exe'; $destination = '%INSTALL_DIR%\git-monitor.exe'; $copied = $false; for ($i = 0; $i -lt 20; $i++) { try { Copy-Item -LiteralPath $source -Destination $destination -Force -ErrorAction Stop; $copied = $true; break } catch { $message = $_.Exception.Message; Start-Sleep -Milliseconds 500 } }; if (-not $copied) { Write-Output $message; exit 1 }" > "%TEMP%\git-monitor-install-copy-error.txt" 2>&1
 if errorlevel 1 (
     echo [ERROR] Failed to copy executable
     set /p "COPY_ERROR_DETAIL="<"%TEMP%\git-monitor-install-copy-error.txt"
@@ -89,8 +90,8 @@ del "%TEMP%\git-monitor-install-copy-error.txt" >nul 2>&1
 echo [SUCCESS] Installed executable to %INSTALL_DIR%
 
 REM Copy default config if available
-if exist "git-monitor.json" (
-    copy "git-monitor.json" "%INSTALL_DIR%\default-config.json" >nul
+if exist "%SCRIPT_DIR%git-monitor.json" (
+    copy "%SCRIPT_DIR%git-monitor.json" "%INSTALL_DIR%\default-config.json" >nul
     echo [INFO] Copied default configuration
 )
 

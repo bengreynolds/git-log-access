@@ -37,6 +37,14 @@ function Get-ExePath {
     return Join-Path $InstallDir "git-monitor.exe"
 }
 
+function Get-ScriptAssetPath {
+    param(
+        [string]$FileName
+    )
+
+    return Join-Path $PSScriptRoot $FileName
+}
+
 function Get-ExistingConfiguration {
     $configPath = Join-Path $ConfigDir "config.json"
     if (!(Test-Path $configPath)) {
@@ -161,7 +169,7 @@ function Test-Prerequisites {
         return $false
     }
 
-    if (!(Test-Path "git-monitor.exe")) {
+    if (!(Test-Path (Get-ScriptAssetPath "git-monitor.exe"))) {
         Write-ErrorMsg "git-monitor.exe not found in current directory"
         Write-Host "Please ensure you've extracted the binary distribution correctly" -ForegroundColor Yellow
         return $false
@@ -175,6 +183,7 @@ function Install-Executable {
     Write-Info "Installing Git Monitor executable..."
 
     try {
+        $sourceExePath = Get-ScriptAssetPath "git-monitor.exe"
         Stop-ExistingMonitorProcesses
 
         if (Test-Path $InstallDir) {
@@ -183,11 +192,28 @@ function Install-Executable {
         }
 
         New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
-        Copy-Item "git-monitor.exe" (Get-ExePath) -Force
+        $copied = $false
+        $lastCopyError = $null
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            try {
+                Copy-Item -LiteralPath $sourceExePath -Destination (Get-ExePath) -Force -ErrorAction Stop
+                $copied = $true
+                break
+            } catch {
+                $lastCopyError = $_.Exception.Message
+                Start-Sleep -Milliseconds 500
+            }
+        }
+
+        if (-not $copied) {
+            throw $lastCopyError
+        }
+
         Write-Success "Installed executable to $(Get-ExePath)"
 
-        if (Test-Path "git-monitor.json") {
-            Copy-Item "git-monitor.json" (Join-Path $InstallDir "default-config.json") -Force
+        $defaultConfigPath = Get-ScriptAssetPath "git-monitor.json"
+        if (Test-Path $defaultConfigPath) {
+            Copy-Item $defaultConfigPath (Join-Path $InstallDir "default-config.json") -Force
             Write-Info "Copied default configuration"
         }
 
