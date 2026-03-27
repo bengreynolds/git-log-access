@@ -11,6 +11,14 @@ setlocal enabledelayedexpansion
 set "SCRIPT_DIR=%~dp0"
 set "INSTALL_DIR=%LOCALAPPDATA%\Programs\GitMonitor"
 set "CONFIG_DIR=%APPDATA%\git-monitor"
+if defined GIT_MONITOR_INSTALL_DIR set "INSTALL_DIR=%GIT_MONITOR_INSTALL_DIR%"
+if defined GIT_MONITOR_CONFIG_DIR set "CONFIG_DIR=%GIT_MONITOR_CONFIG_DIR%"
+set "SKIP_PATH_UPDATE=false"
+if /i "%GIT_MONITOR_SKIP_PATH_UPDATE%"=="true" set "SKIP_PATH_UPDATE=true"
+set "NO_SERVICE=false"
+if /i "%GIT_MONITOR_NO_SERVICE%"=="true" set "NO_SERVICE=true"
+set "NO_PAUSE=false"
+if /i "%GIT_MONITOR_NO_PAUSE%"=="true" set "NO_PAUSE=true"
 
 REM Check for silent installation
 set "SILENT_INSTALL=false"
@@ -58,8 +66,14 @@ set "EXISTING_INSTALL=false"
 if exist "%INSTALL_DIR%\git-monitor.exe" set "EXISTING_INSTALL=true"
 if exist "%CONFIG_DIR%\config.json" set "EXISTING_INSTALL=true"
 
-where git-monitor >nul 2>&1
-if not errorlevel 1 set "COMMAND_IN_PATH=true"
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$scriptExe = [System.IO.Path]::GetFullPath('%SCRIPT_DIR%git-monitor.exe'); $matches = @(Get-Command git-monitor -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -and ([System.IO.Path]::GetFullPath($_.Source) -ne $scriptExe) } | Select-Object -ExpandProperty Source -Unique); $matches | ForEach-Object { Write-Output $_ }" 2^>nul`) do (
+    if not defined COMMAND_IN_PATH set "COMMAND_IN_PATH=true"
+    if not defined RESOLVED_COMMAND_PATHS (
+        set "RESOLVED_COMMAND_PATHS=%%A"
+    ) else (
+        set "RESOLVED_COMMAND_PATHS=!RESOLVED_COMMAND_PATHS!;%%A"
+    )
+)
 
 if "%EXISTING_INSTALL%"=="true" (
     echo.
@@ -69,7 +83,7 @@ if "%EXISTING_INSTALL%"=="true" (
     if defined COMMAND_IN_PATH echo [WARN] git-monitor command is already available in PATH
     if defined COMMAND_IN_PATH (
         echo [INFO] git-monitor resolves to:
-        where git-monitor
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "$paths = '%RESOLVED_COMMAND_PATHS%'.Split(';') | Where-Object { $_ }; $paths | ForEach-Object { Write-Output $_ }"
     )
     echo [INFO] Overwriting previous installation...
 
@@ -118,30 +132,35 @@ if exist "%SCRIPT_DIR%git-monitor.json" (
 REM Check and update PATH
 echo.
 echo [INFO] Checking PATH configuration...
-echo %PATH% | find "%INSTALL_DIR%" >nul
-if errorlevel 1 (
-    echo [INFO] Adding %INSTALL_DIR% to user PATH...
-    
-    REM Get current user PATH
-    for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set "USER_PATH=%%b"
-    
-    REM Add to PATH if not empty
-    if defined USER_PATH (
-        set "NEW_PATH=%USER_PATH%;%INSTALL_DIR%"
-    ) else (
-        set "NEW_PATH=%INSTALL_DIR%"
-    )
-    
-    REM Update registry
-    reg add "HKCU\Environment" /v PATH /t REG_EXPAND_SZ /d "!NEW_PATH!" /f >nul
-    if not errorlevel 1 (
-        echo [SUCCESS] Added to PATH ^(restart terminal to take effect^)
-    ) else (
-        echo [WARN] Failed to update PATH automatically
-        echo You may need to add %INSTALL_DIR% to your PATH manually
-    )
+if "%SKIP_PATH_UPDATE%"=="true" (
+    echo [INFO] Skipping PATH update because GIT_MONITOR_SKIP_PATH_UPDATE=true
 ) else (
-    echo [INFO] Already in PATH
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); $processPath = $env:PATH; if (($userPath -and $userPath.Contains('%INSTALL_DIR%')) -or ($processPath -and $processPath.Contains('%INSTALL_DIR%'))) { exit 0 } else { exit 1 }" >nul 2>&1
+    if errorlevel 1 (
+        echo [INFO] Adding %INSTALL_DIR% to user PATH...
+        
+        REM Get current user PATH
+        for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set "USER_PATH=%%b"
+        
+        REM Add to PATH if not empty
+        if defined USER_PATH (
+            set "NEW_PATH=%USER_PATH%;%INSTALL_DIR%"
+        ) else (
+            set "NEW_PATH=%INSTALL_DIR%"
+        )
+        
+        REM Update registry
+        reg add "HKCU\Environment" /v PATH /t REG_EXPAND_SZ /d "!NEW_PATH!" /f >nul
+        if not errorlevel 1 (
+            echo [SUCCESS] Added to PATH ^(restart terminal to take effect^)
+        ) else (
+            echo [WARN] Failed to update PATH automatically
+            echo You may need to add %INSTALL_DIR% to your PATH manually
+        )
+    ) else (
+        echo [INFO] Already in PATH
+    )
 )
 
 REM Configuration setup
@@ -169,8 +188,8 @@ if "%SILENT_INSTALL%"=="true" (
     set "USER_LOG_DIR=%DEFAULT_LOG_DIR%"
     set "MAX_SIZE_MB=%DEFAULT_MAX_SIZE_MB%"
 
-    echo [INFO] Device nickname: %DEVICE_NICKNAME%
-    echo [INFO] Log directory: %USER_LOG_DIR%
+    echo [INFO] Device nickname: !DEVICE_NICKNAME!
+    echo [INFO] Log directory: !USER_LOG_DIR!
 ) else (
     REM Interactive configuration setup
     echo.
@@ -290,24 +309,32 @@ echo [SUCCESS] Installation test passed
 
 REM Enable monitoring unless silent mode is intended to stay passive
 echo.
-echo [INFO] Enabling shell hooks and background monitor...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$p = Start-Process -FilePath '%INSTALL_DIR%\git-monitor.exe' -ArgumentList 'start' -PassThru; if ($p.WaitForExit(5000)) { exit $p.ExitCode } else { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; exit 124 }" >nul 2>&1
-if errorlevel 124 (
-    echo [WARN] Automatic activation did not complete within 5 seconds
-    echo [INFO] You can enable it later with: git-monitor start
-) else if errorlevel 1 (
-    echo [WARN] Automatic activation failed
-    echo [INFO] You can enable it later with: git-monitor start
+if "%NO_SERVICE%"=="true" (
+    echo [INFO] Skipping shell hooks and background monitor because GIT_MONITOR_NO_SERVICE=true
 ) else (
-    echo [SUCCESS] Monitoring enabled
-    echo [INFO] Open a new PowerShell or pwsh window to load the installed profile hook
+    echo [INFO] Enabling shell hooks and background monitor...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$p = Start-Process -FilePath '%INSTALL_DIR%\git-monitor.exe' -ArgumentList 'start' -PassThru; if ($p.WaitForExit(5000)) { exit $p.ExitCode } else { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; exit 124 }" >nul 2>&1
+    if errorlevel 124 (
+        echo [WARN] Automatic activation did not complete within 5 seconds
+        echo [INFO] You can enable it later with: git-monitor start
+    ) else if errorlevel 1 (
+        echo [WARN] Automatic activation failed
+        echo [INFO] You can enable it later with: git-monitor start
+    ) else (
+        echo [SUCCESS] Monitoring enabled
+        echo [INFO] Open a new PowerShell or pwsh window to load the installed profile hook
+    )
 )
 
 echo.
-echo [INFO] Running post-install self-check...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$exe = '%INSTALL_DIR%\git-monitor.exe'; $cfgPath = '%CONFIG_PATH%'; if (-not (Test-Path $cfgPath)) { Write-Output '[WARN] Self-check skipped because config.json was not found'; exit 0 }; Write-Output '  Status:'; & $exe status 2>&1 | ForEach-Object { Write-Output ('    ' + $_) }; $logPath = try { (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).logPath } catch { $null }; $tempRepo = Join-Path ([System.IO.Path]::GetTempPath()) ('git-monitor-install-check-' + [guid]::NewGuid().ToString('N')); New-Item -Path $tempRepo -ItemType Directory -Force | Out-Null; try { git init --quiet $tempRepo | Out-Null; & $exe capture --config $cfgPath --shell powershell --cwd $tempRepo --parent-pid $PID -- status 2>$null | Out-Null; Start-Sleep -Milliseconds 250 } finally { Remove-Item -LiteralPath $tempRepo -Recurse -Force -ErrorAction SilentlyContinue }; if ($logPath) { Write-Output ('  Detected log path: ' + $logPath); if (Test-Path $logPath) { $latest = Get-Content -LiteralPath $logPath | Select-Object -Last 1; if ($latest) { Write-Output ('  Latest log entry: ' + $latest) } else { Write-Output '[WARN] Log file exists but no entries were found after self-check' } } else { Write-Output '[WARN] Log file was not created during self-check' } } else { Write-Output '[WARN] Could not determine configured log path for self-check' }"
+if "%NO_SERVICE%"=="true" (
+    echo [INFO] Skipping post-install self-check because GIT_MONITOR_NO_SERVICE=true
+) else (
+    echo [INFO] Running post-install self-check...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$exe = '%INSTALL_DIR%\git-monitor.exe'; $cfgPath = '%CONFIG_PATH%'; if (-not (Test-Path $cfgPath)) { Write-Output '[WARN] Self-check skipped because config.json was not found'; exit 0 }; Write-Output '  Status:'; & $exe status 2>&1 | ForEach-Object { Write-Output ('    ' + $_) }; $logPath = try { (Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json).logPath } catch { $null }; $tempRepo = Join-Path ([System.IO.Path]::GetTempPath()) ('git-monitor-install-check-' + [guid]::NewGuid().ToString('N')); New-Item -Path $tempRepo -ItemType Directory -Force | Out-Null; try { git init --quiet $tempRepo | Out-Null; & $exe capture --config $cfgPath --shell powershell --cwd $tempRepo --parent-pid $PID -- status 2>$null | Out-Null; Start-Sleep -Milliseconds 250 } finally { Remove-Item -LiteralPath $tempRepo -Recurse -Force -ErrorAction SilentlyContinue }; if ($logPath) { Write-Output ('  Detected log path: ' + $logPath); if (Test-Path $logPath) { $latest = Get-Content -LiteralPath $logPath | Select-Object -Last 1; if ($latest) { Write-Output ('  Latest log entry: ' + $latest) } else { Write-Output '[WARN] Log file exists but no entries were found after self-check' } } else { Write-Output '[WARN] Log file was not created during self-check' } } else { Write-Output '[WARN] Could not determine configured log path for self-check' }"
+)
 
 echo.
 echo Git Monitor installation is complete!
@@ -336,4 +363,4 @@ echo Getting Help:
 echo   https://github.com/bengreynolds/git-log-access
 echo.
 
-if not "%SILENT_INSTALL%"=="true" pause
+if not "%SILENT_INSTALL%"=="true" if not "%NO_PAUSE%"=="true" pause

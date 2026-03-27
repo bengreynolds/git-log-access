@@ -2,11 +2,12 @@
 # This script installs the pre-compiled binary (no compilation required)
 
 param(
-    [string]$InstallDir = "$env:LOCALAPPDATA\Programs\GitMonitor",
-    [string]$ConfigDir = "$env:APPDATA\git-monitor",
+    [string]$InstallDir = $(if ($env:GIT_MONITOR_INSTALL_DIR) { $env:GIT_MONITOR_INSTALL_DIR } else { "$env:LOCALAPPDATA\Programs\GitMonitor" }),
+    [string]$ConfigDir = $(if ($env:GIT_MONITOR_CONFIG_DIR) { $env:GIT_MONITOR_CONFIG_DIR } else { "$env:APPDATA\git-monitor" }),
     [switch]$Force = $false,
     [switch]$NoService = $false,
-    [switch]$Silent = $false
+    [switch]$Silent = $false,
+    [switch]$SkipPathUpdate = $false
 )
 
 $Colors = @{
@@ -240,33 +241,37 @@ function Install-Executable {
             Write-Info "Copied default configuration"
         }
 
-        $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        if ($currentPath -notlike "*$InstallDir*") {
-            Write-Info "Adding $InstallDir to user PATH..."
-            if ([string]::IsNullOrWhiteSpace($currentPath)) {
-                $newPath = $InstallDir
-            } elseif ($currentPath.EndsWith(';')) {
-                $newPath = "$currentPath$InstallDir"
-            } else {
-                $newPath = "$currentPath;$InstallDir"
-            }
-            $newPath = $newPath.TrimEnd(';')
-            [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-
-            try {
-                Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class Win32 { [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult); }'
-                $HWND_BROADCAST = [IntPtr]0xffff
-                $WM_SETTINGCHANGE = 0x001a
-                $result = [UIntPtr]::Zero
-                [Win32]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, "Environment", 2, 5000, [ref]$result) | Out-Null
-            } catch {
-                Write-Warning "Could not broadcast environment changes: $($_.Exception.Message)"
-            }
-
-            $env:PATH += ";$InstallDir"
-            Write-Success "Added to PATH and refreshed current session"
+        if ($SkipPathUpdate -or $env:GIT_MONITOR_SKIP_PATH_UPDATE -eq "true") {
+            Write-Info "Skipping PATH update because SkipPathUpdate/GIT_MONITOR_SKIP_PATH_UPDATE is enabled"
         } else {
-            Write-Info "Already in PATH"
+            $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            if ($currentPath -notlike "*$InstallDir*") {
+                Write-Info "Adding $InstallDir to user PATH..."
+                if ([string]::IsNullOrWhiteSpace($currentPath)) {
+                    $newPath = $InstallDir
+                } elseif ($currentPath.EndsWith(';')) {
+                    $newPath = "$currentPath$InstallDir"
+                } else {
+                    $newPath = "$currentPath;$InstallDir"
+                }
+                $newPath = $newPath.TrimEnd(';')
+                [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+
+                try {
+                    Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class Win32 { [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult); }'
+                    $HWND_BROADCAST = [IntPtr]0xffff
+                    $WM_SETTINGCHANGE = 0x001a
+                    $result = [UIntPtr]::Zero
+                    [Win32]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, "Environment", 2, 5000, [ref]$result) | Out-Null
+                } catch {
+                    Write-Warning "Could not broadcast environment changes: $($_.Exception.Message)"
+                }
+
+                $env:PATH += ";$InstallDir"
+                Write-Success "Added to PATH and refreshed current session"
+            } else {
+                Write-Info "Already in PATH"
+            }
         }
 
         return $true
@@ -630,17 +635,28 @@ function Test-ExistingInstallation {
     $exePath = Get-ExePath
     $configPath = Join-Path $ConfigDir "config.json"
     $commandAvailable = $false
+    $packageExePath = [System.IO.Path]::GetFullPath((Get-ScriptAssetPath "git-monitor.exe"))
+    $resolvedCommands = @()
 
     try {
-        $null = Get-Command git-monitor -ErrorAction SilentlyContinue
-        $commandAvailable = $true
+        $resolvedCommands = @(Get-Command git-monitor -All -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Source -and ([System.IO.Path]::GetFullPath($_.Source) -ne $packageExePath)
+            } |
+            Select-Object -ExpandProperty Source -Unique)
+        $commandAvailable = $resolvedCommands.Count -gt 0
     } catch {}
 
     if ((Test-Path $exePath) -or (Test-Path $configPath) -or $commandAvailable) {
         Write-Warning "Git Monitor installation detected:"
         if (Test-Path $exePath) { Write-Host "  Executable: $exePath" -ForegroundColor Yellow }
         if (Test-Path $configPath) { Write-Host "  Config: $configPath" -ForegroundColor Yellow }
-        if ($commandAvailable) { Write-Host "  Command available in PATH" -ForegroundColor Yellow }
+        if ($commandAvailable) {
+            Write-Host "  Command available in PATH" -ForegroundColor Yellow
+            foreach ($resolved in $resolvedCommands) {
+                Write-Host "    $resolved" -ForegroundColor Yellow
+            }
+        }
 
         if ($Force) {
             Write-Info "Force flag detected - proceeding with reinstallation..."
@@ -648,8 +664,9 @@ function Test-ExistingInstallation {
         }
 
         if ($Silent) {
-            Write-Warning "Silent mode - skipping reinstall (use -Force to reinstall)"
-            return $false
+            Write-Info "Silent mode - proceeding with reinstallation..."
+            $script:Force = $true
+            return $true
         }
 
         Write-Host ""
