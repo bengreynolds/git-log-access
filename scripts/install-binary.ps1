@@ -107,6 +107,46 @@ function Get-ConfiguredLogPath {
     }
 }
 
+function Stop-ExistingMonitorProcesses {
+    $targetExePath = Get-ExePath
+
+    try {
+        if (Test-Path $targetExePath) {
+            & $targetExePath stop 2>$null | Out-Null
+            Start-Sleep -Milliseconds 500
+        }
+    } catch {}
+
+    try {
+        $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -eq "git-monitor.exe" -or
+                ($_.ExecutablePath -and $_.ExecutablePath -eq $targetExePath)
+            }
+
+        foreach ($process in $processes) {
+            try {
+                Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+            } catch {}
+        }
+    } catch {}
+
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        $stillRunning = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -eq "git-monitor.exe" -or
+                ($_.ExecutablePath -and $_.ExecutablePath -eq $targetExePath)
+            } |
+            Select-Object -First 1
+
+        if (-not $stillRunning) {
+            break
+        }
+
+        Start-Sleep -Milliseconds 250
+    }
+}
+
 function Test-Prerequisites {
     Write-Info "Checking prerequisites..."
 
@@ -135,8 +175,10 @@ function Install-Executable {
     Write-Info "Installing Git Monitor executable..."
 
     try {
-        if ($Force -and (Test-Path $InstallDir)) {
-            Write-Warning "Removing existing installation..."
+        Stop-ExistingMonitorProcesses
+
+        if (Test-Path $InstallDir) {
+            Write-Info "Preparing installation directory..."
             Remove-Item -Path $InstallDir -Recurse -Force
         }
 
@@ -181,6 +223,10 @@ function Install-Executable {
         return $true
     } catch {
         Write-ErrorMsg "Failed to install executable: $($_.Exception.Message)"
+        $targetExePath = Get-ExePath
+        if (Test-Path $targetExePath) {
+            Write-Warning "Target executable still exists at $targetExePath"
+        }
         return $false
     }
 }

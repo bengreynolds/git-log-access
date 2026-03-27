@@ -69,6 +69,12 @@ jobs:
         cp README.md release-dist/
         cp QUICKSTART.md release-dist/ 2>/dev/null || echo "# Quick Start - See README.md" > release-dist/QUICKSTART.md
         echo "MIT License - see repository for details" > release-dist/LICENSE
+        cat > release-dist/BUILD_INFO.txt <<EOF
+        tag=${GITHUB_REF_NAME}
+        commit=${GITHUB_SHA}
+        target=${{ matrix.target }}
+        package=${{ matrix.name }}
+        EOF
         
         # Create platform-specific install scripts
         if [[ "${{ matrix.target }}" == *"windows"* ]]; then
@@ -117,6 +123,34 @@ jobs:
         # Also create a standalone executable for direct download
         mkdir -p standalone
         cp target/${{ matrix.target }}/release/git-monitor${{ matrix.ext }} standalone/git-monitor-${{ github.ref_name || 'v1.0.0' }}-${{ matrix.name }}${{ matrix.ext }}
+
+    - name: Verify distribution package
+      shell: bash
+      run: |
+        rm -rf verify-dist
+        mkdir -p verify-dist
+
+        if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          powershell -Command "Expand-Archive -LiteralPath 'git-monitor-${{ github.ref_name || 'v1.0.0' }}-${{ matrix.name }}.zip' -DestinationPath 'verify-dist'"
+        else
+          tar -xzf "git-monitor-${{ github.ref_name || 'v1.0.0' }}-${{ matrix.name }}.tar.gz" -C verify-dist
+        fi
+
+        test -f verify-dist/BUILD_INFO.txt
+        grep -F "tag=${GITHUB_REF_NAME}" verify-dist/BUILD_INFO.txt
+        grep -F "commit=${GITHUB_SHA}" verify-dist/BUILD_INFO.txt
+        test -f verify-dist/README.md
+        test -f verify-dist/git-monitor.json
+
+        if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          test -f verify-dist/install.bat
+          test -f verify-dist/install.ps1
+          grep -F "Keep existing configuration?" verify-dist/install.bat
+          grep -F "Running post-install self-check..." verify-dist/install.bat
+          grep -F "Stop-ExistingMonitorProcesses" verify-dist/install.ps1
+        else
+          test -f verify-dist/install.sh
+        fi
 
     - name: Upload package artifacts
       uses: actions/upload-artifact@v7

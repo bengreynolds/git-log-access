@@ -63,10 +63,8 @@ if "%EXISTING_INSTALL%"=="true" (
     if defined COMMAND_IN_PATH echo [WARN] git-monitor command is already available in PATH
     echo [INFO] Overwriting previous installation...
 
-    if exist "%INSTALL_DIR%\git-monitor.exe" (
-        "%INSTALL_DIR%\git-monitor.exe" stop >nul 2>&1
-        timeout /t 2 /nobreak >nul
-    )
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$exe = '%INSTALL_DIR%\git-monitor.exe'; if (Test-Path $exe) { try { & $exe stop 2>$null | Out-Null } catch {}; Start-Sleep -Milliseconds 500 }; $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'git-monitor.exe' -or ($_.ExecutablePath -and $_.ExecutablePath -eq $exe) }; foreach ($proc in $procs) { try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }; for ($i = 0; $i -lt 20; $i++) { $still = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'git-monitor.exe' -or ($_.ExecutablePath -and $_.ExecutablePath -eq $exe) } | Select-Object -First 1; if (-not $still) { break }; Start-Sleep -Milliseconds 250 }" >nul 2>&1
 
     if exist "%INSTALL_DIR%" (
         rmdir /s /q "%INSTALL_DIR%" >nul 2>&1
@@ -77,12 +75,17 @@ REM Create installation directory
 echo.
 echo [INFO] Installing Git Monitor executable...
 mkdir "%INSTALL_DIR%" 2>nul
-copy "git-monitor.exe" "%INSTALL_DIR%\git-monitor.exe" >nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$source = Join-Path (Get-Location) 'git-monitor.exe'; $destination = '%INSTALL_DIR%\git-monitor.exe'; try { Copy-Item -LiteralPath $source -Destination $destination -Force -ErrorAction Stop } catch { Write-Output $_.Exception.Message; exit 1 }" > "%TEMP%\git-monitor-install-copy-error.txt" 2>&1
 if errorlevel 1 (
     echo [ERROR] Failed to copy executable
+    set /p "COPY_ERROR_DETAIL="<"%TEMP%\git-monitor-install-copy-error.txt"
+    if defined COPY_ERROR_DETAIL echo [ERROR] !COPY_ERROR_DETAIL!
+    if exist "%INSTALL_DIR%\git-monitor.exe" echo [WARN] Target executable still exists: %INSTALL_DIR%\git-monitor.exe
     pause
     exit /b 1
 )
+del "%TEMP%\git-monitor-install-copy-error.txt" >nul 2>&1
 echo [SUCCESS] Installed executable to %INSTALL_DIR%
 
 REM Copy default config if available
