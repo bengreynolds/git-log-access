@@ -46,6 +46,32 @@ if not exist "git-monitor.exe" (
 )
 echo [SUCCESS] git-monitor.exe found
 
+REM Detect and overwrite existing installation state
+set "EXISTING_INSTALL=false"
+if exist "%INSTALL_DIR%\git-monitor.exe" set "EXISTING_INSTALL=true"
+if exist "%CONFIG_DIR%\config.json" set "EXISTING_INSTALL=true"
+
+where git-monitor >nul 2>&1
+if not errorlevel 1 set "COMMAND_IN_PATH=true"
+
+if "%EXISTING_INSTALL%"=="true" (
+    echo.
+    echo [WARN] Existing Git Monitor installation detected
+    if exist "%INSTALL_DIR%\git-monitor.exe" echo [WARN] Existing executable: %INSTALL_DIR%\git-monitor.exe
+    if exist "%CONFIG_DIR%\config.json" echo [WARN] Existing config: %CONFIG_DIR%\config.json
+    if defined COMMAND_IN_PATH echo [WARN] git-monitor command is already available in PATH
+    echo [INFO] Overwriting previous installation...
+
+    if exist "%INSTALL_DIR%\git-monitor.exe" (
+        "%INSTALL_DIR%\git-monitor.exe" stop >nul 2>&1
+        timeout /t 2 /nobreak >nul
+    )
+
+    if exist "%INSTALL_DIR%" (
+        rmdir /s /q "%INSTALL_DIR%" >nul 2>&1
+    )
+)
+
 REM Create installation directory
 echo.
 echo [INFO] Installing Git Monitor executable...
@@ -115,16 +141,16 @@ if "%SILENT_INSTALL%"=="true" (
     REM Device nickname
     set "DEFAULT_NICKNAME=%COMPUTERNAME%"
     if not defined DEFAULT_NICKNAME set "DEFAULT_NICKNAME=my-computer"
-    set /p "DEVICE_NICKNAME=Device nickname [%DEFAULT_NICKNAME%]: "
-    if not defined DEVICE_NICKNAME set "DEVICE_NICKNAME=%DEFAULT_NICKNAME%"
+    set /p "DEVICE_NICKNAME=Device nickname [!DEFAULT_NICKNAME!]: "
+    if not defined DEVICE_NICKNAME set "DEVICE_NICKNAME=!DEFAULT_NICKNAME!"
 
     REM Log directory  
     set "DEFAULT_LOG_DIR=%USERPROFILE%\.local\share\git-monitor"
     echo.
     echo Log Directory:
     echo   Where git command logs will be stored
-    set /p "USER_LOG_DIR=Log directory [%DEFAULT_LOG_DIR%]: "
-    if not defined USER_LOG_DIR set "USER_LOG_DIR=%DEFAULT_LOG_DIR%"
+    set /p "USER_LOG_DIR=Log directory [!DEFAULT_LOG_DIR!]: "
+    if not defined USER_LOG_DIR set "USER_LOG_DIR=!DEFAULT_LOG_DIR!"
 
     REM Log rotation
     echo.
@@ -136,13 +162,13 @@ if "%SILENT_INSTALL%"=="true" (
     REM Confirmation
     echo.
     echo === Configuration Summary ===
-    echo Device Nickname: %DEVICE_NICKNAME%
-    echo Log Directory: %USER_LOG_DIR%
-    echo Log File: %USER_LOG_DIR%\%DEVICE_NICKNAME%_githistory.log
-    echo Max Log Size: %MAX_SIZE_MB%MB
+    echo Device Nickname: !DEVICE_NICKNAME!
+    echo Log Directory: !USER_LOG_DIR!
+    echo Log File: !USER_LOG_DIR!\!DEVICE_NICKNAME!_githistory.log
+    echo Max Log Size: !MAX_SIZE_MB!MB
     echo.
     set /p "CONFIRM=Continue with this configuration? [Y/n]: "
-    if /i "%CONFIRM%"=="n" (
+    if /i "!CONFIRM!"=="n" (
         echo Configuration cancelled by user
         pause
         exit /b 1
@@ -160,30 +186,26 @@ echo [INFO] Creating configuration...
 REM Create basic config file
 set "CONFIG_PATH=%CONFIG_DIR%\config.json"
 set "LOG_FILE_PATH=%USER_LOG_DIR%\%DEVICE_NICKNAME%_githistory.log"
-if not exist "%CONFIG_PATH%" (
-    (
-        echo {
-        echo   "logPath": "%LOG_FILE_PATH:\=\\%",
-        echo   "deviceNickname": "%DEVICE_NICKNAME%",
-        echo   "enabledShells": ["powershell", "pwsh"],
-        echo   "monitorScope": "user",
-        echo   "logRotation": {
-        echo     "enabled": true,
-        echo     "maxSizeMb": %MAX_SIZE_MB%,
-        echo     "keepFiles": 10
-        echo   },
-        echo   "performance": {
-        echo     "maxMemoryMb": 10,
-        echo     "logBufferSize": 1000,
-        echo     "flushIntervalSeconds": 30
-        echo   }
-        echo }
-    ) > "%CONFIG_PATH%"
-    echo [SUCCESS] Created configuration at %CONFIG_PATH%
-    echo [SUCCESS] Log will be written to: %LOG_FILE_PATH%
-) else (
-    echo [INFO] Configuration already exists at %CONFIG_PATH%
-)
+(
+    echo {
+    echo   "logPath": "%LOG_FILE_PATH:\=\\%",
+    echo   "deviceNickname": "%DEVICE_NICKNAME%",
+    echo   "enabledShells": ["powershell", "pwsh"],
+    echo   "monitorScope": "user",
+    echo   "logRotation": {
+    echo     "enabled": true,
+    echo     "maxSizeMb": %MAX_SIZE_MB%,
+    echo     "keepFiles": 10
+    echo   },
+    echo   "performance": {
+    echo     "maxMemoryMb": 10,
+    echo     "logBufferSize": 1000,
+    echo     "flushIntervalSeconds": 30
+    echo   }
+    echo }
+) > "%CONFIG_PATH%"
+echo [SUCCESS] Created configuration at %CONFIG_PATH%
+echo [SUCCESS] Log will be written to: %LOG_FILE_PATH%
 
 REM Test installation
 echo.
@@ -199,8 +221,12 @@ echo [SUCCESS] Installation test passed
 REM Enable monitoring unless silent mode is intended to stay passive
 echo.
 echo [INFO] Enabling shell hooks and background monitor...
-"%INSTALL_DIR%\git-monitor.exe" start >nul 2>&1
-if errorlevel 1 (
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$p = Start-Process -FilePath '%INSTALL_DIR%\git-monitor.exe' -ArgumentList 'start' -PassThru; if ($p.WaitForExit(5000)) { exit $p.ExitCode } else { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; exit 124 }" >nul 2>&1
+if errorlevel 124 (
+    echo [WARN] Automatic activation did not complete within 5 seconds
+    echo [INFO] You can enable it later with: git-monitor start
+) else if errorlevel 1 (
     echo [WARN] Automatic activation failed
     echo [INFO] You can enable it later with: git-monitor start
 ) else (
