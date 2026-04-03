@@ -123,6 +123,7 @@ jobs:
         # Also create a standalone executable for direct download
         mkdir -p standalone
         cp target/${{ matrix.target }}/release/git-monitor${{ matrix.ext }} standalone/git-monitor-${{ github.ref_name || 'v1.0.0' }}-${{ matrix.name }}${{ matrix.ext }}
+        test -f standalone/git-monitor-${{ github.ref_name || 'v1.0.0' }}-${{ matrix.name }}${{ matrix.ext }}
 
     - name: Verify distribution package
       shell: bash
@@ -258,6 +259,8 @@ jobs:
           filename=$(basename "$file")
           echo "- **$filename** - Standalone executable" >> release-assets/DOWNLOADS.md
         done
+
+        test -n "$(find release-assets -maxdepth 1 -type f -name 'git-monitor-*' ! -name '*.zip' ! -name '*.tar.gz')"
         
         echo "Release assets prepared:"
         ls -la release-assets/
