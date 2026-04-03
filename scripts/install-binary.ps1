@@ -50,6 +50,41 @@ function Get-ScriptAssetPath {
     return Join-Path $PSScriptRoot $FileName
 }
 
+function Unblock-PackageFiles {
+    Write-Info "Removing download security blocks from package files..."
+
+    $files = @(
+        Get-ScriptAssetPath "git-monitor.exe",
+        Get-ScriptAssetPath "git-monitor.json",
+        Get-ScriptAssetPath "install.ps1",
+        Get-ScriptAssetPath "install.bat"
+    ) | Where-Object { Test-Path $_ }
+
+    foreach ($file in $files) {
+        try {
+            Unblock-File -LiteralPath $file -ErrorAction Stop
+            Write-DebugInfo "Unblocked $file"
+        } catch {
+            Write-DebugInfo "Could not unblock ${file}: $($_.Exception.Message)"
+        }
+    }
+}
+
+function Test-ReadableFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    try {
+        $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $stream.Dispose()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Get-ExistingConfiguration {
     $configPath = Join-Path $ConfigDir "config.json"
     if (!(Test-Path $configPath)) {
@@ -123,6 +158,8 @@ function Get-ConfiguredLogPath {
 function Stop-ExistingMonitorProcesses {
     $targetExePath = Get-ExePath
 
+    Write-Info "Stopping running Git Monitor processes..."
+
     try {
         if (Test-Path $targetExePath) {
             & $targetExePath stop 2>$null | Out-Null
@@ -131,31 +168,49 @@ function Stop-ExistingMonitorProcesses {
     } catch {}
 
     try {
+        Get-Command git-monitor -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.Source } |
+            Select-Object -ExpandProperty Source -Unique |
+            ForEach-Object {
+                try {
+                    & $_ stop 2>$null | Out-Null
+                } catch {}
+            }
+        Start-Sleep -Milliseconds 500
+    } catch {}
+
+    $stoppedCount = 0
+    try {
         $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
             Where-Object {
-                $_.Name -eq "git-monitor.exe" -or
-                ($_.ExecutablePath -and $_.ExecutablePath -eq $targetExePath)
+                $_.Name -eq "git-monitor.exe"
             }
 
         foreach ($process in $processes) {
             try {
                 Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+                $stoppedCount += 1
             } catch {}
         }
     } catch {}
 
+    Write-DebugInfo "Stop requested for $stoppedCount Git Monitor process(es)"
+
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         $stillRunning = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
             Where-Object {
-                $_.Name -eq "git-monitor.exe" -or
-                ($_.ExecutablePath -and $_.ExecutablePath -eq $targetExePath)
+                $_.Name -eq "git-monitor.exe"
             } |
             Select-Object -First 1
 
         if (-not $stillRunning) {
+            Write-DebugInfo "No Git Monitor processes remain running"
             break
         }
 
+        if ($attempt -eq 19) {
+            Write-Warning "Git Monitor process is still running after shutdown attempts"
+        }
         Start-Sleep -Milliseconds 250
     }
 }
@@ -178,9 +233,19 @@ function Test-Prerequisites {
         return $false
     }
 
-    if (!(Test-Path (Get-ScriptAssetPath "git-monitor.exe"))) {
+    $sourceExePath = Get-ScriptAssetPath "git-monitor.exe"
+    if (!(Test-Path $sourceExePath)) {
         Write-ErrorMsg "git-monitor.exe not found in current directory"
         Write-Host "Please ensure you've extracted the binary distribution correctly" -ForegroundColor Yellow
+        return $false
+    }
+
+    Unblock-PackageFiles
+
+    if (!(Test-ReadableFile -Path $sourceExePath)) {
+        Write-ErrorMsg "git-monitor.exe exists but cannot be read"
+        Write-Warning "Windows is blocking access to the downloaded executable"
+        Write-Host "Move the extracted folder outside Downloads or unblock the ZIP/executable, then retry." -ForegroundColor Yellow
         return $false
     }
 
@@ -278,8 +343,11 @@ function Install-Executable {
     } catch {
         Write-ErrorMsg "Failed to install executable: $($_.Exception.Message)"
         $targetExePath = Get-ExePath
-        Write-DebugInfo "Source exists: $(Test-Path (Get-ScriptAssetPath 'git-monitor.exe'))"
+        Write-DebugInfo "Source exists: $(Test-ReadableFile -Path (Get-ScriptAssetPath 'git-monitor.exe'))"
         Write-DebugInfo "Destination parent exists: $(Test-Path $InstallDir)"
+        if (!(Test-ReadableFile -Path (Get-ScriptAssetPath 'git-monitor.exe'))) {
+            Write-Warning "Source executable cannot be read. Move the extracted package out of Downloads or unblock it."
+        }
         if (Test-Path $targetExePath) {
             Write-Warning "Target executable still exists at $targetExePath"
         }
@@ -486,18 +554,26 @@ function Enable-Monitoring {
 
     try {
         $exePath = Get-ExePath
-        $process = Start-Process -FilePath $exePath -ArgumentList "start" -NoNewWindow -PassThru
-        if ($process.WaitForExit(5000)) {
-            if ($process.ExitCode -eq 0) {
-                Write-Success "Monitoring enabled"
-                Write-Info "Open a new PowerShell or pwsh window to load the installed profile hook"
-            } else {
-                Write-Warning "Automatic activation failed with exit code $($process.ExitCode)"
-                Write-Info "You can enable it later with: git-monitor start"
-            }
+        $process = Start-Process -FilePath $exePath -ArgumentList "start" -WindowStyle Hidden -PassThru
+        if ($process.WaitForExit(10000)) {
+            $process.Refresh()
+            $exitCode = $process.ExitCode
         } else {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            Write-Warning "Automatic activation did not complete within 5 seconds"
+            try {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            } catch {}
+            $exitCode = 124
+        }
+
+        if ($exitCode -eq 0) {
+            Write-Success "Monitoring enabled"
+            Write-Info "Automatic sign-in startup was configured for the background monitor"
+            Write-Info "Open a new PowerShell or pwsh window to load the installed profile hook"
+        } elseif ($exitCode -eq 124) {
+            Write-Warning "Automatic activation did not complete within 10 seconds"
+            Write-Info "You can enable it later with: git-monitor start"
+        } else {
+            Write-Warning "Automatic activation failed with exit code $exitCode"
             Write-Info "You can enable it later with: git-monitor start"
         }
     } catch {
@@ -569,6 +645,7 @@ function Show-CompletionMessage {
         Write-Host "Run 'git-monitor start' when you are ready to install hooks and start the daemon." -ForegroundColor White
     } else {
         Write-Host "Hook-based interception and the background monitor were enabled." -ForegroundColor Green
+        Write-Host "Automatic sign-in startup was configured for the background monitor." -ForegroundColor Green
         Write-Host "Open a new PowerShell or pwsh session so the installed profile hook is loaded." -ForegroundColor White
     }
 

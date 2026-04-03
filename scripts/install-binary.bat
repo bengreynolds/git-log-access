@@ -61,6 +61,22 @@ if not exist "%SCRIPT_DIR%git-monitor.exe" (
 )
 echo [SUCCESS] git-monitor.exe found
 
+echo [INFO] Removing download security blocks from package files...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$files = @('%SCRIPT_DIR%git-monitor.exe','%SCRIPT_DIR%git-monitor.json','%SCRIPT_DIR%install.bat','%SCRIPT_DIR%install.ps1') | Where-Object { Test-Path $_ }; foreach ($file in $files) { try { Unblock-File -LiteralPath $file -ErrorAction Stop; Write-Output ('[INFO] Unblocked ' + $file) } catch { Write-Output ('[INFO] Could not unblock ' + $file + ': ' + $_.Exception.Message) } }"
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$source = '%SCRIPT_DIR%git-monitor.exe'; try { $stream = [System.IO.File]::Open($source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite); $stream.Dispose(); exit 0 } catch { Write-Output $_.Exception.Message; exit 1 }" > "%TEMP%\git-monitor-install-source-check.txt" 2>&1
+if errorlevel 1 (
+    echo [ERROR] git-monitor.exe exists but cannot be read
+    type "%TEMP%\git-monitor-install-source-check.txt"
+    echo [WARN] Windows is blocking access to the downloaded executable
+    echo [WARN] Move the extracted folder outside Downloads or unblock the ZIP/executable, then retry.
+    if not "%NO_PAUSE%"=="true" pause
+    exit /b 1
+)
+del "%TEMP%\git-monitor-install-source-check.txt" >nul 2>&1
+
 REM Detect and overwrite existing installation state
 set "EXISTING_INSTALL=false"
 if exist "%INSTALL_DIR%\git-monitor.exe" set "EXISTING_INSTALL=true"
@@ -87,9 +103,6 @@ if "%EXISTING_INSTALL%"=="true" (
     )
     echo [INFO] Overwriting previous installation...
 
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-      "$exe = '%INSTALL_DIR%\git-monitor.exe'; if (Test-Path $exe) { try { & $exe stop 2>$null | Out-Null } catch {}; Start-Sleep -Milliseconds 500 }; $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'git-monitor.exe' -or ($_.ExecutablePath -and $_.ExecutablePath -eq $exe) }; foreach ($proc in $procs) { try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }; for ($i = 0; $i -lt 20; $i++) { $still = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'git-monitor.exe' -or ($_.ExecutablePath -and $_.ExecutablePath -eq $exe) } | Select-Object -First 1; if (-not $still) { break }; Start-Sleep -Milliseconds 250 }" >nul 2>&1
-
     if exist "%INSTALL_DIR%" (
         echo [INFO] Existing install directory contents before cleanup:
         dir "%INSTALL_DIR%" /a
@@ -101,6 +114,10 @@ if "%EXISTING_INSTALL%"=="true" (
         )
     )
 )
+
+echo [INFO] Stopping running Git Monitor processes...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$exe = '%INSTALL_DIR%\git-monitor.exe'; if (Test-Path $exe) { try { & $exe stop 2>$null | Out-Null } catch {} }; Get-Command git-monitor -All -ErrorAction SilentlyContinue | Where-Object { $_.Source } | Select-Object -ExpandProperty Source -Unique | ForEach-Object { try { & $_ stop 2>$null | Out-Null } catch {} }; Start-Sleep -Milliseconds 500; $stopped = 0; $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'git-monitor.exe' }); foreach ($proc in $procs) { try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue; $stopped += 1 } catch {} }; Write-Output ('[INFO] Stop requested for ' + $stopped + ' Git Monitor process(es)'); for ($i = 0; $i -lt 20; $i++) { $still = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'git-monitor.exe' } | Select-Object -First 1; if (-not $still) { Write-Output '[INFO] No Git Monitor processes remain running'; exit 0 }; Start-Sleep -Milliseconds 250 }; Write-Output '[WARN] Git Monitor process is still running after shutdown attempts'" 
 
 REM Create installation directory
 echo.
@@ -116,6 +133,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 if errorlevel 1 (
     echo [ERROR] Failed to copy executable
     type "%TEMP%\git-monitor-install-copy-error.txt"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$source = '%SCRIPT_DIR%git-monitor.exe'; try { $stream = [System.IO.File]::Open($source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite); $stream.Dispose(); Write-Output '[INFO] Source readable after copy failure: True' } catch { Write-Output ('[WARN] Source readable after copy failure: False - ' + $_.Exception.Message) }"
     if exist "%INSTALL_DIR%\git-monitor.exe" echo [WARN] Target executable still exists: %INSTALL_DIR%\git-monitor.exe
     pause
     exit /b 1
@@ -314,15 +333,16 @@ if "%NO_SERVICE%"=="true" (
 ) else (
     echo [INFO] Enabling shell hooks and background monitor...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-      "$p = Start-Process -FilePath '%INSTALL_DIR%\git-monitor.exe' -ArgumentList 'start' -PassThru; if ($p.WaitForExit(5000)) { exit $p.ExitCode } else { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; exit 124 }" >nul 2>&1
+      "$p = Start-Process -FilePath '%INSTALL_DIR%\git-monitor.exe' -ArgumentList 'start' -WindowStyle Hidden -PassThru; if ($p.WaitForExit(10000)) { $p.Refresh(); exit $p.ExitCode } else { try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}; exit 124 }" >nul 2>&1
     if errorlevel 124 (
-        echo [WARN] Automatic activation did not complete within 5 seconds
+        echo [WARN] Automatic activation did not complete within 10 seconds
         echo [INFO] You can enable it later with: git-monitor start
     ) else if errorlevel 1 (
         echo [WARN] Automatic activation failed
         echo [INFO] You can enable it later with: git-monitor start
     ) else (
         echo [SUCCESS] Monitoring enabled
+        echo [INFO] Automatic sign-in startup was configured for the background monitor
         echo [INFO] Open a new PowerShell or pwsh window to load the installed profile hook
     )
 )
@@ -338,6 +358,8 @@ if "%NO_SERVICE%"=="true" (
 
 echo.
 echo Git Monitor installation is complete!
+echo.
+if not "%NO_SERVICE%"=="true" echo Automatic sign-in startup was configured for the background monitor.
 echo.
 echo Next steps:
 echo   1. Open a new terminal ^(to refresh PATH and load shell profile changes^)
