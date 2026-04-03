@@ -1,6 +1,8 @@
 use crate::config::Config;
 use crate::monitor::GitCommandParser;
-use crate::service::{GitLogger, HookManager, HookStatus, ProcessMonitor};
+use crate::service::{
+    GitLogger, HookManager, HookStatus, ProcessMonitor, StartupManager, StartupStatus,
+};
 use anyhow::{Context, Result};
 use log::info;
 use std::fs;
@@ -66,6 +68,7 @@ impl GitMonitorDaemon {
 
         let config_path = self.config.ensure_default_file()?;
         HookManager::install(&self.config)?;
+        let startup = StartupManager::enable(&config_path)?;
 
         if Self::background_daemon_running()? {
             info!("Background process monitor is already running");
@@ -82,6 +85,7 @@ impl GitMonitorDaemon {
         Self::print_status(
             &HookManager::status(&self.config)?,
             Self::background_daemon_running()?,
+            &startup,
         );
         Ok(())
     }
@@ -91,6 +95,7 @@ impl GitMonitorDaemon {
         info!("Stopping Git Monitor Daemon");
         let config = Config::load_or_default(None)?;
         HookManager::set_enabled(&config, false)?;
+        StartupManager::disable()?;
         Self::stop_background_daemon()?;
         Ok(())
     }
@@ -100,7 +105,11 @@ impl GitMonitorDaemon {
         info!("Installing Git Monitor shell hooks");
         let _path = config.ensure_default_file()?;
         let status = HookManager::install(&config)?;
-        Self::print_status(&status, Self::background_daemon_running()?);
+        Self::print_status(
+            &status,
+            Self::background_daemon_running()?,
+            &StartupManager::status()?,
+        );
         Ok(())
     }
 
@@ -109,8 +118,9 @@ impl GitMonitorDaemon {
         info!("Uninstalling Git Monitor shell hooks");
         let config = Config::load_or_default(None)?;
         let status = HookManager::uninstall(&config)?;
+        StartupManager::disable()?;
         Self::stop_background_daemon()?;
-        Self::print_status(&status, false);
+        Self::print_status(&status, false, &StartupManager::status()?);
         Ok(())
     }
 
@@ -119,7 +129,11 @@ impl GitMonitorDaemon {
         info!("Checking Git Monitor service status");
         let config = Config::load_or_default(None)?;
         let status = HookManager::status(&config)?;
-        Self::print_status(&status, Self::background_daemon_running()?);
+        Self::print_status(
+            &status,
+            Self::background_daemon_running()?,
+            &StartupManager::status()?,
+        );
         Ok(())
     }
 
@@ -130,7 +144,7 @@ impl GitMonitorDaemon {
 
         let _path = self.config.ensure_default_file()?;
         let status = HookManager::install(&self.config)?;
-        Self::print_status(&status, false);
+        Self::print_status(&status, false, &StartupManager::status()?);
         info!("Foreground mode active. Press Ctrl+C to disable interception and exit.");
         self.run_process_monitor_until_ctrl_c().await?;
         HookManager::set_enabled(&self.config, false)?;
@@ -248,7 +262,7 @@ impl GitMonitorDaemon {
         monitor.run(self).await
     }
 
-    fn print_status(status: &HookStatus, daemon_running: bool) {
+    fn print_status(status: &HookStatus, daemon_running: bool, startup: &StartupStatus) {
         println!(
             "Interception: {}",
             if status.enabled {
@@ -261,6 +275,19 @@ impl GitMonitorDaemon {
             "Process monitor: {}",
             if daemon_running { "running" } else { "stopped" }
         );
+        if startup.supported {
+            println!(
+                "Auto-start: {} ({})",
+                if startup.configured {
+                    "configured"
+                } else {
+                    "not configured"
+                },
+                startup.description
+            );
+        } else {
+            println!("Auto-start: unsupported");
+        }
         for target in &status.targets {
             if target.supported {
                 println!(
@@ -311,17 +338,37 @@ impl GitMonitorDaemon {
         if Self::is_pid_running(pid)? {
             #[cfg(windows)]
             {
-                Command::new("taskkill")
+                let output = Command::new("taskkill")
                     .args(["/PID", &pid.to_string(), "/F"])
                     .output()
                     .context("Failed to stop background daemon")?;
+                if !output.status.success() {
+                    anyhow::bail!(
+                        "Failed to stop background daemon: {}",
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    );
+                }
             }
             #[cfg(unix)]
             {
-                Command::new("kill")
+                let status = Command::new("kill")
                     .args(["-TERM", &pid.to_string()])
-                    .output()
+                    .status()
                     .context("Failed to stop background daemon")?;
+                if !status.success() {
+                    anyhow::bail!("Failed to stop background daemon with SIGTERM");
+                }
+            }
+
+            for _ in 0..20 {
+                if !Self::is_pid_running(pid)? {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+
+            if Self::is_pid_running(pid)? {
+                anyhow::bail!("Background daemon is still running after shutdown request");
             }
         }
 
