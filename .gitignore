@@ -36,6 +36,7 @@ tmp/
 # Distribution and packaging
 dist/
 release-dist/
+release-local/
 build/
 *.egg-info/
 __pycache__/
