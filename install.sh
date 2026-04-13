@@ -223,7 +223,7 @@ show_usage_instructions() {
     echo ""
     echo -e "${BLUE}Getting Help:${NC}"
     echo "  git-monitor --help           # Show all commands"
-    echo "  https://github.com/bengreynolds/git-log-access"
+    echo "  https://github.com/Cerebellum-Lab/git-log-access"
     echo ""
 }
 

@@ -247,7 +247,7 @@ function Show-CompletionMessage {
     Write-Host "  Edit: $ConfigDir\config.json"
     Write-Host ""
     Write-Host "Getting Help:" -ForegroundColor $Colors.Blue
-    Write-Host "  https://github.com/bengreynolds/git-log-access"
+    Write-Host "  https://github.com/Cerebellum-Lab/git-log-access"
     Write-Host ""
 }
 

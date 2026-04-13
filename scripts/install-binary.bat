@@ -382,7 +382,7 @@ echo   install.bat           # Interactive setup ^(what you just used^)
 echo   install.bat SILENT    # Automated setup with defaults
 echo.
 echo Getting Help:
-echo   https://github.com/bengreynolds/git-log-access
+echo   https://github.com/Cerebellum-Lab/git-log-access
 echo.
 
 if not "%SILENT_INSTALL%"=="true" if not "%NO_PAUSE%"=="true" pause

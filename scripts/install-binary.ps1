@@ -667,7 +667,7 @@ function Show-CompletionMessage {
     Write-Host "  Device: $(try { (Get-Content (Join-Path $ConfigDir 'config.json') | ConvertFrom-Json).deviceNickname } catch { 'Configuration' })"
     Write-Host ""
     Write-Host "Getting Help:" -ForegroundColor $Colors.Blue
-    Write-Host "  https://github.com/bengreynolds/git-log-access"
+    Write-Host "  https://github.com/Cerebellum-Lab/git-log-access"
     Write-Host ""
 }
 

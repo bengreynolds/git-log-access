@@ -362,7 +362,7 @@ show_completion() {
     echo "  Edit: $CONFIG_DIR/config.json"
     echo ""
     echo -e "${BLUE}Getting Help:${NC}"
-    echo "  https://github.com/bengreynolds/git-log-access"
+    echo "  https://github.com/Cerebellum-Lab/git-log-access"
     echo ""
 }
 

@@ -226,7 +226,7 @@ function Show-UsageInstructions {
     Write-Host ""
     Write-Host "Getting Help:" -ForegroundColor $Colors.Blue
     Write-Host "  git-monitor --help           # Show all commands"
-    Write-Host "  https://github.com/bengreynolds/git-log-access"
+    Write-Host "  https://github.com/Cerebellum-Lab/git-log-access"
     Write-Host ""
     Write-Warning "Note: Restart your terminal to use 'git-monitor' from anywhere"
 }

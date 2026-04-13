@@ -161,7 +161,7 @@ echo Configuration:
 echo   Edit: %CONFIG_PATH%
 echo.
 echo Getting Help:
-echo   https://github.com/bengreynolds/git-log-access
+echo   https://github.com/Cerebellum-Lab/git-log-access
 echo.
 
 pause
