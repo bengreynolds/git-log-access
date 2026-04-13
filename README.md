@@ -21,42 +21,51 @@ Sensitive values are sanitized before they are written.
 
 ## Start Here
 
-Install Rust if needed, then build the project:
+Recommended install: use the release bundle for your platform.
+
+That path installs the prebuilt executable and configures the normal hook/startup flow without requiring you to compile anything.
+
+### Windows Release Install
+
+Run the installer that ships with the release bundle:
 
 ```powershell
-cargo build --release
+scripts\install-binary.ps1
 ```
 
-Run the monitor in foreground mode for testing:
+Or, if you prefer batch:
 
 ```powershell
-cargo run -- run --verbose
+scripts\install-binary.bat
 ```
 
-If you have a release bundle, run the included installer script for your platform and then start the monitor:
+After installation:
 
 ```powershell
-git-monitor start
 git-monitor status
+git-monitor start
+```
+
+### Linux/macOS Release Install
+
+Run the shell installer that ships with the release bundle:
+
+```bash
+./scripts/install-binary.sh
+git-monitor status
+git-monitor start
 ```
 
 ## Installation Paths
 
 ### Build From Source
 
+This is for contributors and developers who want to build the binary themselves.
+
 1. Clone the repository.
 2. Install Rust 1.70 or newer.
 3. Run `cargo build --release`.
 4. Use `cargo run -- run --verbose` to test.
-
-### Release Bundle
-
-1. Download the release archive for your platform.
-2. Run the platform installer that ships with the bundle or, from this repo, use one of:
-   - `scripts/install-binary.ps1`
-   - `scripts/install-binary.bat`
-   - `scripts/install-binary.sh`
-3. Run `git-monitor start` to enable interception.
 
 ## Configuration
 
@@ -93,7 +102,8 @@ git-monitor uninstall
 
 - If git commands are not being logged, confirm `git-monitor status` reports interception as enabled.
 - If the tool cannot find your config, check the installation output for the exact config path.
-- If the install script fails, run `cargo run -- --help` or `git-monitor --help` to verify the binary starts.
+- If the release installer fails, rerun it with verbose output and check the generated install log.
+- If you are building from source and the binary does not start, run `cargo run -- --help` or `git-monitor --help` to verify the binary starts.
 
 ## Development
 

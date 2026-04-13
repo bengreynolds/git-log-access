@@ -8,11 +8,9 @@ The project builds, passes its tests, and now supports real git interception thr
 
 ### Windows (PowerShell):
 ```powershell
-# 1. Install Rust
-winget install Rustlang.Rust.MSVC
-
-# 2. Restart terminal, then install Git Monitor
-.\install.ps1
+# 1. Download the release bundle
+# 2. Run the bundled installer script
+.\scripts\install-binary.ps1
 
 # 3. Install hooks and start monitoring
 git-monitor start
@@ -20,12 +18,9 @@ git-monitor start
 
 ### Linux/macOS:
 ```bash
-# 1. Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
-
-# 2. Install Git Monitor
-./install.sh
+# 1. Download the release bundle
+# 2. Run the bundled installer script
+./scripts/install-binary.sh
 
 # 3. Install hooks and start monitoring
 git-monitor start
